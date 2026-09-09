@@ -76,7 +76,7 @@ export const es: LanguagePack = {
     'setup.advanced': 'Avanzado',
     'setup.validation': 'Revisión de palabras',
     'setup.validation.hybrid': 'Revisión inteligente (listas + diccionario + voto)',
-    'setup.validation.bundled': 'Solo listas de palabras',
+    'setup.validation.bundled': 'Listas de palabras + voto',
     'setup.validation.dictionary': 'Diccionario en línea',
     'setup.validation.vote': 'Solo votación del grupo',
     'setup.validation.none': 'No revisar palabras',

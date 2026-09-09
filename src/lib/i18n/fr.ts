@@ -76,7 +76,7 @@ export const fr: LanguagePack = {
     'setup.advanced': 'Avancé',
     'setup.validation': 'Vérification des mots',
     'setup.validation.hybrid': 'Vérif futée (listes + dictionnaire + vote)',
-    'setup.validation.bundled': 'Listes de mots seulement',
+    'setup.validation.bundled': 'Listes de mots + vote',
     'setup.validation.dictionary': 'Dictionnaire en ligne',
     'setup.validation.vote': 'Vote du groupe seulement',
     'setup.validation.none': 'Ne pas vérifier les mots',

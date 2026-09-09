@@ -76,7 +76,7 @@ export const ru: LanguagePack = {
     'setup.advanced': 'Дополнительно',
     'setup.validation': 'Проверка слов',
     'setup.validation.hybrid': 'Умная проверка (списки + словарь + голосование)',
-    'setup.validation.bundled': 'Только списки слов',
+    'setup.validation.bundled': 'Списки слов + голосование',
     'setup.validation.dictionary': 'Онлайн-словарь',
     'setup.validation.vote': 'Только голосование',
     'setup.validation.none': 'Не проверять слова',

@@ -183,7 +183,10 @@
   // pass-and-play where turns are taken one after another. null = untouched.
   let speedScoringChoice = $state<boolean | null>(null);
   const hasSpeedScoring = $derived(speedScoringChoice ?? playStyle === 'remote');
-  let validation = $state<ValidationMode>('hybrid');
+  // Bundled lists decide instantly and offline; anything unknown goes to the
+  // group. The online dictionary only checks that a word exists, not that it
+  // fits the category, so it is opt-in.
+  let validation = $state<ValidationMode>('bundled');
   let voteMode = $state<VoteMode>('devices');
   let gameLanguage = $state($uiLanguage);
 
@@ -642,8 +645,8 @@
         <label class="select-field">
           <span class="select-label">{$t('setup.validation')}</span>
           <select class="native-select" bind:value={validation}>
-            <option value="hybrid">{$t('setup.validation.hybrid')}</option>
             <option value="bundled">{$t('setup.validation.bundled')}</option>
+            <option value="hybrid">{$t('setup.validation.hybrid')}</option>
             <option value="dictionary">{$t('setup.validation.dictionary')}</option>
             <option value="vote">{$t('setup.validation.vote')}</option>
             <option value="none">{$t('setup.validation.none')}</option>
@@ -664,9 +667,12 @@
         <div class="toggle-field">
           <span class="select-label">{$t('setup.online')}</span>
           <div class="chip-row">
-            <Chip on={hasWikidataCheck} onclick={() => (hasWikidataCheck = !hasWikidataCheck)}
-              >{hasWikidataCheck ? '✓ ' : ''}{$t('setup.wikidata')}</Chip
-            >
+            <!-- Only the online-dictionary modes consult Wikidata. -->
+            {#if validation === 'hybrid' || validation === 'dictionary'}
+              <Chip on={hasWikidataCheck} onclick={() => (hasWikidataCheck = !hasWikidataCheck)}
+                >{hasWikidataCheck ? '✓ ' : ''}{$t('setup.wikidata')}</Chip
+              >
+            {/if}
             <Chip on={hasFunFacts} onclick={() => (hasFunFacts = !hasFunFacts)}
               >{hasFunFacts ? '✓ ' : ''}{$t('setup.funFact')}</Chip
             >

@@ -99,7 +99,7 @@ export const he: LanguagePack = {
     'setup.advanced': 'הגדרות מתקדמות',
     'setup.validation': 'בדיקת מילים',
     'setup.validation.hybrid': 'בדיקה חכמה (רשימות + מילון + הצבעה)',
-    'setup.validation.bundled': 'רשימות מילים בלבד',
+    'setup.validation.bundled': 'רשימות מילים + הצבעה',
     'setup.validation.dictionary': 'מילון מקוון',
     'setup.validation.vote': 'הצבעה קבוצתית בלבד',
     'setup.validation.none': 'בלי בדיקת מילים',

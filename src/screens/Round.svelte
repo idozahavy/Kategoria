@@ -538,8 +538,8 @@
           value={$game.settings.validation}
           onchange={(e) => setValidation(e.currentTarget.value as ValidationMode)}
         >
-          <option value="hybrid">{$t('setup.validation.hybrid')}</option>
           <option value="bundled">{$t('setup.validation.bundled')}</option>
+          <option value="hybrid">{$t('setup.validation.hybrid')}</option>
           <option value="dictionary">{$t('setup.validation.dictionary')}</option>
           <option value="vote">{$t('setup.validation.vote')}</option>
           <option value="none">{$t('setup.validation.none')}</option>
@@ -549,9 +549,11 @@
       <div class="settings-group">
         <span class="field-label">{$t('setup.online')}</span>
         <div class="chip-row">
-          <Chip on={$game.settings.hasWikidataCheck !== false} onclick={toggleWikidata}
-            >{$game.settings.hasWikidataCheck !== false ? '✓ ' : ''}{$t('setup.wikidata')}</Chip
-          >
+          {#if $game.settings.validation === 'hybrid' || $game.settings.validation === 'dictionary'}
+            <Chip on={$game.settings.hasWikidataCheck !== false} onclick={toggleWikidata}
+              >{$game.settings.hasWikidataCheck !== false ? '✓ ' : ''}{$t('setup.wikidata')}</Chip
+            >
+          {/if}
           <Chip on={$game.settings.hasFunFacts !== false} onclick={toggleFunFacts}
             >{$game.settings.hasFunFacts !== false ? '✓ ' : ''}{$t('setup.funFact')}</Chip
           >

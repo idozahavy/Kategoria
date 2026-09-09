@@ -99,7 +99,7 @@ export const ar: LanguagePack = {
     'setup.advanced': 'متقدم',
     'setup.validation': 'فحص الكلمات',
     'setup.validation.hybrid': 'فحص ذكي (قوائم + قاموس + تصويت)',
-    'setup.validation.bundled': 'قوائم الكلمات فقط',
+    'setup.validation.bundled': 'قوائم الكلمات + تصويت',
     'setup.validation.dictionary': 'قاموس عبر الإنترنت',
     'setup.validation.vote': 'تصويت المجموعة فقط',
     'setup.validation.none': 'عدم فحص الكلمات',

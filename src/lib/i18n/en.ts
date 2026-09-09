@@ -76,7 +76,7 @@ export const en: LanguagePack = {
     'setup.advanced': 'Advanced',
     'setup.validation': 'Word checking',
     'setup.validation.hybrid': 'Smart check (lists + dictionary + vote)',
-    'setup.validation.bundled': 'Word lists only',
+    'setup.validation.bundled': 'Word lists + group vote',
     'setup.validation.dictionary': 'Online dictionary',
     'setup.validation.vote': 'Group vote only',
     'setup.validation.none': "Don't check words",
