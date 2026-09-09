@@ -1,5 +1,4 @@
 <script lang="ts">
-  import QRCode from 'qrcode';
   import { onMount } from 'svelte';
 
   import { AVATAR_EMOJI, fileToAvatar } from '../lib/avatar';
@@ -144,14 +143,18 @@
     stepError = '';
   }
 
-  /** QR code for the lobby — scanning opens the app on the join screen. */
+  /**
+   * QR code for the lobby — scanning opens the app on the join screen. The
+   * encoder is fetched on demand: only hosts of a phones-join game need it.
+   */
   $effect(() => {
     if (roomCode === '') {
       qrDataUrl = '';
       return;
     }
     const url = `${location.origin}${location.pathname}?join=${roomCode}`;
-    void QRCode.toDataURL(url, { width: 220, margin: 1 })
+    void import('qrcode')
+      .then(({ default: QRCode }) => QRCode.toDataURL(url, { width: 220, margin: 1 }))
       .then((u) => (qrDataUrl = u))
       .catch(() => (qrDataUrl = ''));
   });
