@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { botAnswers } from './bot';
+import { ensureWords, getWords } from './words';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -20,8 +21,12 @@ describe('botAnswers', () => {
     // animal: fill-check passes (0 <= fill rate), index pick 0 -> first match.
     // food: fill-check fails (0.99 > fill rate) -> category skipped entirely.
     stubRandomSequence(0, 0, 0.99);
+    // The lists grow over time - read the expected pick from the list itself.
+    await ensureWords('en');
+    const firstAnimalWithA = getWords('en')['animal']?.find((w) => w.startsWith('a'));
+    expect(firstAnimalWithA).toBeDefined();
     const answers = await botAnswers('en', 'a', ['animal', 'food']);
-    expect(answers).toEqual({ animal: 'alligator' });
+    expect(answers).toEqual({ animal: firstAnimalWithA });
     expect(answers.food).toBeUndefined();
   });
 
