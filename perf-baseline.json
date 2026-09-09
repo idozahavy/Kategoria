@@ -1,0 +1,66 @@
+{
+  "date": "2026-09-09T18:17:00",
+  "commit": "d66dc0a",
+  "regression_threshold_pct": 10,
+  "notes": "Run metrics in order: build must precede bundle-js, main-js-gz and dist-total (they read dist/). Startup of the product is a browser page, not a Node process; runtime-floor only frames the dev-tool numbers.",
+  "metrics": [
+    {
+      "id": "runtime-floor",
+      "command": "powershell -NoProfile -File C:\\Users\\Ido\\.claude\\scripts\\bench.ps1 -Exe node -Arguments '-e 0' -Runs 5 -Warmup 1 -TimeoutSec 60 -Label runtime-floor -Json",
+      "unit": "ms",
+      "runs": [147.7, 138, 139.6, 140.4, 138.6],
+      "median": 139.6,
+      "peak_mb": 41.6
+    },
+    {
+      "id": "test-suite",
+      "command": "powershell -NoProfile -File C:\\Users\\Ido\\.claude\\scripts\\bench.ps1 -Command 'npx vitest run --reporter=dot' -Runs 3 -TimeoutSec 300 -Label test-suite -Json",
+      "unit": "ms",
+      "runs": [2385.7, 2410.3, 2412.2],
+      "median": 2410.3,
+      "peak_mb": 1072.8
+    },
+    {
+      "id": "build",
+      "command": "powershell -NoProfile -File C:\\Users\\Ido\\.claude\\scripts\\bench.ps1 -Command 'npx vite build --logLevel silent' -Runs 3 -TimeoutSec 300 -Label build -Json",
+      "unit": "ms",
+      "runs": [4886.1, 4647.1, 4682.6],
+      "median": 4682.6,
+      "peak_mb": 632.5
+    },
+    {
+      "id": "svelte-check",
+      "command": "powershell -NoProfile -File C:\\Users\\Ido\\.claude\\scripts\\bench.ps1 -Command 'npx svelte-check --tsconfig ./tsconfig.json --output machine' -Runs 3 -TimeoutSec 300 -Label svelte-check -Json",
+      "unit": "ms",
+      "runs": [4470.8, 4504.4, 4636.1],
+      "median": 4504.4,
+      "peak_mb": 636
+    },
+    {
+      "id": "bundle-js",
+      "command": "[math]::Round((Get-ChildItem dist/assets -Filter *.js | Measure-Object Length -Sum).Sum / 1KB)",
+      "unit": "KB",
+      "median": 485
+    },
+    {
+      "id": "main-js-gz",
+      "command": "node bench/main-gz.mjs",
+      "unit": "KB",
+      "median": 147
+    },
+    {
+      "id": "dist-total",
+      "command": "[math]::Round((Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)",
+      "unit": "KB",
+      "median": 706
+    },
+    {
+      "id": "clone-save-worst",
+      "command": "node bench/clone-save.mjs",
+      "unit": "us",
+      "runs": [1714],
+      "median": 1714
+    }
+  ],
+  "history": []
+}

@@ -7,3 +7,6 @@ dist/
 .wrangler/coverage/
 .test-gaps-tmp/
 test-gaps-report.html
+
+# perf-audit profiler output (bench/ scripts are committed)
+prof/
