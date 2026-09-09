@@ -10,3 +10,10 @@
 
 /turn-credentials
   Cache-Control: no-store
+
+# Vite names everything under /assets/ by content hash, so a URL never
+# changes meaning - cache forever instead of revalidating each visit.
+# index.html, sw.js and manifest keep the default (revalidate) so updates
+# still reach every device.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
