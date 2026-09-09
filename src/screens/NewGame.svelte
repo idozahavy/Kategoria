@@ -176,7 +176,10 @@
   let isEndless = $state(false);
   let hasWikidataCheck = $state(true);
   let hasFunFacts = $state(true);
-  let hasSpeedScoring = $state(true);
+  // Speed bonus: on by default when phones answer at the same time, off for
+  // pass-and-play where turns are taken one after another. null = untouched.
+  let speedScoringChoice = $state<boolean | null>(null);
+  const hasSpeedScoring = $derived(speedScoringChoice ?? playStyle === 'remote');
   let validation = $state<ValidationMode>('hybrid');
   let voteMode = $state<VoteMode>('devices');
   let gameLanguage = $state($uiLanguage);
@@ -669,7 +672,7 @@
         <div class="toggle-field">
           <span class="select-label">{$t('setup.speedScoring.hint')}</span>
           <div class="chip-row">
-            <Chip on={hasSpeedScoring} onclick={() => (hasSpeedScoring = !hasSpeedScoring)}
+            <Chip on={hasSpeedScoring} onclick={() => (speedScoringChoice = !hasSpeedScoring)}
               >{hasSpeedScoring ? '✓ ' : ''}{$t('setup.speedScoring')}</Chip
             >
           </div>
