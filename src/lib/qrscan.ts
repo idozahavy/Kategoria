@@ -1,10 +1,12 @@
-import jsQR from 'jsqr';
-
 /**
  * Camera QR scanning for the join screen. Prefers the native BarcodeDetector
  * (fast, hardware-backed on Android Chrome) and falls back to jsQR decoding
  * video frames through a canvas everywhere else (notably iOS Safari).
+ * jsQR is loaded on demand — it is the largest module in the app and most
+ * players never need it.
  */
+
+type JsQrDecode = (typeof import('jsqr'))['default'];
 
 // The Shape Detection API isn't in TypeScript's DOM lib yet — declare the slice we use.
 interface DetectedBarcode {
@@ -53,7 +55,11 @@ function nativeDetector(): BarcodeDetectorLike | null {
   }
 }
 
-function decodeWithCanvas(video: HTMLVideoElement, canvas: HTMLCanvasElement): string | null {
+function decodeWithCanvas(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+  jsQR: JsQrDecode,
+): string | null {
   const width = video.videoWidth;
   const height = video.videoHeight;
   if (width === 0 || height === 0) return null;
@@ -75,22 +81,31 @@ export async function startQrScan(
   video: HTMLVideoElement,
   ondetect: (text: string) => void,
 ): Promise<() => void> {
+  const detector = nativeDetector();
+  // No native detector: fetch the jsQR chunk while the camera prompt is up.
+  const decoderLoad = detector ? null : import('jsqr');
+  // The load is awaited (and its failure reported) below; this keeps a chunk
+  // failure from surfacing as an unhandled rejection when the camera prompt
+  // fails first and that await is never reached.
+  void decoderLoad?.catch(() => undefined);
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: 'environment' } },
     audio: false,
   });
   video.srcObject = stream;
+  let decode: JsQrDecode | null = null;
   try {
     await video.play();
+    if (decoderLoad) decode = (await decoderLoad).default;
   } catch (e) {
-    // Autoplay policy / interruption: release the camera before failing,
-    // otherwise the recording indicator stays on until a reload.
+    // Autoplay policy / interruption / chunk failed to load: release the
+    // camera before failing, otherwise the recording indicator stays on
+    // until a reload.
     for (const track of stream.getTracks()) track.stop();
     video.srcObject = null;
     throw e;
   }
 
-  const detector = nativeDetector();
   const canvas = document.createElement('canvas');
   let stopped = false;
   let busy = false;
@@ -110,8 +125,8 @@ export async function startQrScan(
       if (detector) {
         const [found] = await detector.detect(video);
         text = found?.rawValue ?? null;
-      } else {
-        text = decodeWithCanvas(video, canvas);
+      } else if (decode) {
+        text = decodeWithCanvas(video, canvas, decode);
       }
       if (text !== null) {
         stop();
