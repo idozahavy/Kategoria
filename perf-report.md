@@ -203,13 +203,13 @@ Estimated total if all five are applied: the gzipped main chunk drops from about
 
 ## Applied (2026-09-09, approved: top 5 quick wins)
 
-| ID       | Commit  | Measured result                                                                                      |
-| -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| PERF-002 | 4cabd3f | main-js-gz 147 -> 100 KB (jsQR now a 131 KB lazy chunk)                                              |
-| PERF-001 | d2be4f6 | main-js-gz 100 -> 77 KB (PeerJS stack now an 89 KB lazy chunk)                                       |
-| PERF-004 | b463e82 | main-js-gz 77 -> 66 KB (qrcode now a 26 KB lazy chunk)                                               |
-| PERF-003 | 854969f | dist/\_headers carries `/assets/*` immutable; confirm live with the curl Repro after the next deploy |
-| PERF-005 | cc6b3dc | service-worker font precache 137 -> 122 KB (4 subsets)                                               |
+| ID       | Commit  | Measured result                                                                                                                         |
+| -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| PERF-002 | 4cabd3f | main-js-gz 147 -> 100 KB (jsQR now a 131 KB lazy chunk)                                                                                 |
+| PERF-001 | d2be4f6 | main-js-gz 100 -> 77 KB (PeerJS stack now an 89 KB lazy chunk)                                                                          |
+| PERF-004 | b463e82 | main-js-gz 77 -> 66 KB (qrcode now a 26 KB lazy chunk)                                                                                  |
+| PERF-003 | 854969f | dist/\_headers carries `/assets/*` immutable; verified live after deploy e45d4cf8: `cache-control: public, max-age=31536000, immutable` |
+| PERF-005 | cc6b3dc | service-worker font precache 137 -> 122 KB (4 subsets)                                                                                  |
 
 Net: first-visit JavaScript 147 -> 66 KB gzipped (raw main chunk 448 -> 204 KB); total JS unchanged by design (the libraries moved into chunks fetched only by the flows that use them, still precached for offline play). Full suite after all fixes: 203 tests passed, all six gates green. Each fix was reviewed by a separate agent before commit; PERF-002 gained a no-op catch on the chunk promise from that review. The P2P test helper's `flush()` now yields one real macrotask because a dynamic import resolves through vitest's module loader.
 
