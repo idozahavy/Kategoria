@@ -40,19 +40,25 @@
       "id": "bundle-js",
       "command": "[math]::Round((Get-ChildItem dist/assets -Filter *.js | Measure-Object Length -Sum).Sum / 1KB)",
       "unit": "KB",
-      "median": 485
+      "median": 486
     },
     {
       "id": "main-js-gz",
       "command": "node bench/main-gz.mjs",
       "unit": "KB",
-      "median": 147
+      "median": 66
     },
     {
       "id": "dist-total",
       "command": "[math]::Round((Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)",
       "unit": "KB",
-      "median": 706
+      "median": 707
+    },
+    {
+      "id": "sw-font-precache",
+      "command": "node bench/sw-fonts.mjs",
+      "unit": "KB",
+      "median": 122
     },
     {
       "id": "clone-save-worst",
@@ -62,5 +68,47 @@
       "median": 1714
     }
   ],
-  "history": []
+  "history": [
+    {
+      "date": "2026-09-09T19:20:00",
+      "finding": "PERF-002",
+      "commit": "4cabd3f",
+      "metric": "main-js-gz",
+      "old_median": 147
+    },
+    {
+      "date": "2026-09-09T19:24:00",
+      "finding": "PERF-001",
+      "commit": "d2be4f6",
+      "metric": "main-js-gz",
+      "old_median": 100
+    },
+    {
+      "date": "2026-09-09T19:27:00",
+      "finding": "PERF-004",
+      "commit": "b463e82",
+      "metric": "main-js-gz",
+      "old_median": 77
+    },
+    {
+      "date": "2026-09-09T19:32:00",
+      "finding": "PERF-005",
+      "commit": "cc6b3dc",
+      "metric": "sw-font-precache",
+      "old_median": 137
+    },
+    {
+      "date": "2026-09-09T19:32:00",
+      "finding": "PERF-001/002/004",
+      "metric": "bundle-js",
+      "old_median": 485,
+      "note": "total js unchanged by design - the libraries moved into lazy chunks"
+    },
+    {
+      "date": "2026-09-09T19:32:00",
+      "finding": "PERF-001/002/004",
+      "metric": "dist-total",
+      "old_median": 706
+    }
+  ]
 }

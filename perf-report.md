@@ -42,11 +42,11 @@ Browser (desktop, 12 cores, localhost preview, cold cache, service worker unregi
 
 | ID       | Location                      | Impact | Effort | Confidence | Risk    | Evidence | Status   |
 | -------- | ----------------------------- | ------ | ------ | ---------- | ------- | -------- | -------- |
-| PERF-001 | src/lib/p2p.ts:1              | High   | S      | High       | Safe    | M        | reported |
-| PERF-002 | src/lib/qrscan.ts:1           | High   | S      | High       | Safe    | M        | reported |
-| PERF-003 | public/_headers:5             | Medium | S      | High       | Safe    | M        | reported |
-| PERF-004 | src/screens/NewGame.svelte:2  | Medium | S      | High       | Safe    | M        | reported |
-| PERF-005 | vite.config.ts:31             | Low    | S      | High       | Safe    | M        | reported |
+| PERF-001 | src/lib/p2p.ts:1              | High   | S      | High       | Safe    | M        | fixed    |
+| PERF-002 | src/lib/qrscan.ts:1           | High   | S      | High       | Safe    | M        | fixed    |
+| PERF-003 | public/_headers:5             | Medium | S      | High       | Safe    | M        | fixed    |
+| PERF-004 | src/screens/NewGame.svelte:2  | Medium | S      | High       | Safe    | M        | fixed    |
+| PERF-005 | vite.config.ts:31             | Low    | S      | High       | Safe    | M        | fixed    |
 | PERF-006 | .github/workflows/ci.yml:16   | Low    | S      | Medium     | Safe    | M        | reported |
 | PERF-007 | src/lib/validation.ts:244     | Medium | M      | Medium     | Careful | S        | reported |
 | PERF-008 | src/screens/Home.svelte:19    | Low    | S      | Medium     | Safe    | S        | reported |
@@ -200,6 +200,18 @@ Sorted by Impact / Effort (High 3, Medium 2, Low 1 over S 1, M 2, L 4), ties by 
 | 5    | PERF-005 | 13 KB less service-worker install download (Vietnamese subset)                   |
 
 Estimated total if all five are applied: the gzipped main chunk drops from about 147 KB to about 45 KB (roughly two thirds less first-visit JavaScript), repeat visits stop revalidating hashed assets, and the SW install shrinks by 13 KB. Desktop timing will not move (already 21 ms to DOMContentLoaded); the win is on phones and slow networks, which this audit could not time - install Lighthouse to measure it.
+
+## Applied (2026-09-09, approved: top 5 quick wins)
+
+| ID       | Commit  | Measured result                                                                                      |
+| -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| PERF-002 | 4cabd3f | main-js-gz 147 -> 100 KB (jsQR now a 131 KB lazy chunk)                                              |
+| PERF-001 | d2be4f6 | main-js-gz 100 -> 77 KB (PeerJS stack now an 89 KB lazy chunk)                                       |
+| PERF-004 | b463e82 | main-js-gz 77 -> 66 KB (qrcode now a 26 KB lazy chunk)                                               |
+| PERF-003 | 854969f | dist/\_headers carries `/assets/*` immutable; confirm live with the curl Repro after the next deploy |
+| PERF-005 | cc6b3dc | service-worker font precache 137 -> 122 KB (4 subsets)                                               |
+
+Net: first-visit JavaScript 147 -> 66 KB gzipped (raw main chunk 448 -> 204 KB); total JS unchanged by design (the libraries moved into chunks fetched only by the flows that use them, still precached for offline play). Full suite after all fixes: 203 tests passed, all six gates green. Each fix was reviewed by a separate agent before commit; PERF-002 gained a no-op catch on the chunk promise from that review. The P2P test helper's `flush()` now yields one real macrotask because a dynamic import resolves through vitest's module loader.
 
 ## Checked, found fine
 
