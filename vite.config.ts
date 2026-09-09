@@ -27,6 +27,9 @@ export default defineConfig({
         // solo and pass-&-play work fully offline; dictionary checking and
         // P2P already degrade gracefully without network.
         globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
+        // The font package ships a Vietnamese subset the app never draws
+        // (no Vietnamese pack; Hebrew/Arabic fall back to system fonts).
+        globIgnores: ['**/nunito-vietnamese-*'],
       },
     }),
   ],
