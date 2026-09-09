@@ -78,8 +78,18 @@ export class FakePeer extends Emitter {
   }
 }
 
-/** Let the awaited TURN lookup and promise chains settle before the Peer exists. */
+/** Captured before any test installs fake timers — flush() must yield to the real event loop. */
+const realSetTimeout = globalThis.setTimeout;
+
+/**
+ * Let the awaited TURN lookup, the lazy `import('peerjs')` and promise chains
+ * settle before the Peer exists. The dynamic import resolves through the
+ * module loader (real I/O, not a microtask), hence one real macrotask first.
+ */
 export async function flush(rounds = 10): Promise<void> {
+  await new Promise<void>((resolve) => {
+    realSetTimeout(resolve, 0);
+  });
   for (let i = 0; i < rounds; i++) await Promise.resolve();
 }
 

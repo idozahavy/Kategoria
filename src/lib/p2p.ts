@@ -1,4 +1,5 @@
-import Peer, { type DataConnection, type PeerJSOption } from 'peerjs';
+import type Peer from 'peerjs';
+import type { DataConnection, PeerJSOption } from 'peerjs';
 
 import { newId } from './game';
 import { readStorage, writeStorage } from './storage';
@@ -269,6 +270,15 @@ async function fetchPeerOptions(): Promise<PeerJSOption> {
   }
 }
 
+/**
+ * PeerJS and its WebRTC shims are a quarter of the app's JavaScript and only
+ * phones-join games need them — the chunk is fetched when a room is opened
+ * or joined, and the service worker precaches it for offline LAN play.
+ */
+async function loadPeer(): Promise<typeof Peer> {
+  return (await import('peerjs')).default;
+}
+
 function getPeerOptions(): Promise<PeerJSOption> {
   if (Date.now() - peerOptionsFetchedAt > TURN_CREDENTIALS_MAX_AGE_MS) peerOptionsPromise = null;
   if (peerOptionsPromise === null) {
@@ -307,10 +317,10 @@ export interface HostRoom {
 
 /** Open a room on the public broker; retries with a fresh code on collision. */
 export async function createRoom(attempts = 3): Promise<HostRoom> {
-  const options = await getPeerOptions();
+  const [options, PeerCtor] = await Promise.all([getPeerOptions(), loadPeer()]);
   return new Promise((resolve, reject) => {
     const code = makeRoomCode();
-    const peer = new Peer(PEER_PREFIX + code, options);
+    const peer = new PeerCtor(PEER_PREFIX + code, options);
     let settled = false;
 
     const timeout = setTimeout(() => {
@@ -352,10 +362,10 @@ export async function reopenRoom(
   players: GuestInfo[],
   attempts = 3,
 ): Promise<HostRoom> {
-  const options = await getPeerOptions();
+  const [options, PeerCtor] = await Promise.all([getPeerOptions(), loadPeer()]);
   return new Promise((resolve, reject) => {
     const normalized = normalizeRoomCode(code);
-    const peer = new Peer(PEER_PREFIX + normalized, options);
+    const peer = new PeerCtor(PEER_PREFIX + normalized, options);
     let settled = false;
 
     const timeout = setTimeout(() => {
@@ -635,9 +645,9 @@ export interface GuestSession {
 
 /** Join a room by code; rejects with Error('not-found' | 'network'). */
 export async function joinRoom(code: string, name: string, avatar?: string): Promise<GuestSession> {
-  const options = await getPeerOptions();
+  const [options, PeerCtor] = await Promise.all([getPeerOptions(), loadPeer()]);
   return new Promise((resolve, reject) => {
-    const peer = new Peer(options);
+    const peer = new PeerCtor(options);
     let settled = false;
     let messageCb: ((msg: HostMessage) => void) | null = null;
     let closeCb: (() => void) | null = null;
