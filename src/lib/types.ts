@@ -17,6 +17,13 @@ export type ScoringSystem = 'unique' | 'simple';
 /** Word checking strategy (advanced settings can change it; 'none' = don't check). */
 export type ValidationMode = 'hybrid' | 'bundled' | 'dictionary' | 'vote' | 'none';
 
+/**
+ * Remote games: where a word nothing could check gets voted on.
+ * host: the group decides together on the shared screen.
+ * devices: every player taps yes/no on their own phone; half or more yes counts.
+ */
+export type VoteMode = 'host' | 'devices';
+
 export interface CategoryDef {
   id: string;
   /** i18n key for built-in categories (resolved via language pack). */
@@ -73,6 +80,8 @@ export interface GameSettings {
   isRemote?: boolean;
   /** Remote games: the room's join code, so a reloaded host can reopen the room. */
   roomCode?: string;
+  /** Remote games: where unknown words are voted on (absent = shared screen). */
+  voteMode?: VoteMode;
 }
 
 export type AnswerStatus = 'pending' | 'valid' | 'shared' | 'invalid';

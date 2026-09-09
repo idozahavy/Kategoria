@@ -33,12 +33,9 @@
     handoffOpen = !isRemote && players.length > 1;
     const room = isRemote ? getActiveRoom() : null;
     if (!room) return;
-    room.onGuestMessage((playerId, msg) => {
+    return room.onGuestMessage((playerId, msg) => {
       handleGuestAnswers(playerId, msg);
     });
-    return () => {
-      room.onGuestMessage(null);
-    };
   });
 
   const round = $derived($game ? $game.rounds[$game.currentRound] : null);

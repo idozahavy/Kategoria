@@ -81,6 +81,36 @@ export async function checkWord(word: string, options: WordCheckOptions): Promis
   return 'vote';
 }
 
+/** The review screen waits at most this long per word — the rest go to the group. */
+export const CHECK_DEADLINE_MS = 2000;
+
+/**
+ * checkWord with a hard deadline: a check still running when it passes
+ * resolves to 'vote'. The lookups keep going in the background and warm the
+ * caches for the next round. Never throws.
+ */
+export function checkWordWithin(
+  word: string,
+  options: WordCheckOptions,
+  deadlineMs = CHECK_DEADLINE_MS,
+): Promise<WordVerdict> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      resolve('vote');
+    }, deadlineMs);
+    checkWord(word, options).then(
+      (verdict) => {
+        clearTimeout(timer);
+        resolve(verdict);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve('vote');
+      },
+    );
+  });
+}
+
 /**
  * Fire-and-forget check for a just-submitted word: warms the word-list,
  * learned-word, and dictionary caches so the review screen resolves instantly.

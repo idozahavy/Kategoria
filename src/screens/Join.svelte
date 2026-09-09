@@ -10,6 +10,7 @@
     joinRoom,
     MAX_ANSWER_LENGTH,
     normalizeRoomCode,
+    PING_INTERVAL_MS,
   } from '../lib/p2p';
   import { hasCamera, roomCodeFromScan, startQrScan } from '../lib/qrscan';
   import { screen } from '../lib/stores';
@@ -21,9 +22,22 @@
   import TextInput from '../lib/ui/TextInput.svelte';
   import TimerPill from '../lib/ui/TimerPill.svelte';
   import TopBar from '../lib/ui/TopBar.svelte';
+  import type { VoteChoice } from '../lib/vote';
 
-  type GuestPhase = 'form' | 'connecting' | 'lobby' | 'entry' | 'waiting' | 'scores' | 'error';
+  type GuestPhase =
+    | 'form'
+    | 'connecting'
+    | 'lobby'
+    | 'entry'
+    | 'waiting'
+    | 'vote'
+    | 'voted'
+    | 'results'
+    | 'scores'
+    | 'error';
   type RoundMsg = Extract<HostMessage, { type: 'round' }>;
+  type VoteMsg = Extract<HostMessage, { type: 'vote' }>;
+  type ResultsMsg = Extract<HostMessage, { type: 'results' }>;
   type ScoresMsg = Extract<HostMessage, { type: 'scores' }>;
 
   let phase = $state<GuestPhase>('form');
@@ -42,6 +56,8 @@
 
   let session: GuestSession | null = null;
   let roster = $state<string[]>([]);
+  /** Our seat in the room — highlights our own rows in the round results. */
+  let playerId = $state('');
 
   // Remember who/where this tab joined so a reload (or dropped connection)
   // can jump straight back into the running game — the host keeps the seat.
@@ -83,7 +99,11 @@
     }
   }
   let round = $state<RoundMsg | null>(null);
+  let vote = $state<VoteMsg | null>(null);
+  let results = $state<ResultsMsg | null>(null);
   let scores = $state<ScoresMsg | null>(null);
+  // Votes already cast this session: a replayed vote (reconnect) stays "sent".
+  const votedIds = new Set<string>();
   let answers = $state<Record<string, string>>({});
   let submitted = $state(false);
   let showSubmitConfirm = $state(false);
@@ -92,7 +112,24 @@
   // doesn't slow the timer down (the host's clock keeps running regardless).
   let roundReceivedAt = 0;
 
+  // Heartbeat, so the host can tell a phone that is still here from one whose
+  // tab or network died — the connection itself rarely closes promptly.
+  let pingTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startPing(): void {
+    stopPing();
+    pingTimer = setInterval(() => {
+      session?.send({ type: 'ping' });
+    }, PING_INTERVAL_MS);
+  }
+
+  function stopPing(): void {
+    if (pingTimer !== null) clearInterval(pingTimer);
+    pingTimer = null;
+  }
+
   onDestroy(() => {
+    stopPing();
     session?.close();
     session = null;
   });
@@ -107,6 +144,12 @@
       submitted = false;
       showSubmitConfirm = false;
       phase = 'entry';
+    } else if (msg.type === 'vote') {
+      vote = msg;
+      phase = votedIds.has(msg.voteId) ? 'voted' : 'vote';
+    } else if (msg.type === 'results') {
+      results = msg;
+      phase = 'results';
     } else if (msg.type === 'scores') {
       scores = msg;
       phase = 'scores';
@@ -127,14 +170,17 @@
     phase = 'connecting';
     try {
       session = await joinRoom(code, name.trim(), avatar);
+      playerId = session.playerId;
       rememberSession();
       session.onMessage(handleMessage);
       session.onClose(() => {
+        stopPing();
         if (phase !== 'scores' && phase !== 'error') {
           errorKey = 'join.error.disconnected';
           phase = 'error';
         }
       });
+      startPing();
       phase = 'lobby';
     } catch (e) {
       errorKey =
@@ -158,6 +204,14 @@
       ),
     });
     phase = 'waiting';
+  }
+
+  function castVote(choice: VoteChoice): void {
+    const v = vote;
+    if (!session || !v || phase !== 'vote') return;
+    votedIds.add(v.voteId);
+    session.send({ type: 'vote', voteId: v.voteId, choice });
+    phase = 'voted';
   }
 
   /** Lock the words in — but confirm first when some categories are still blank. */
@@ -204,6 +258,7 @@
   });
 
   function leave(): void {
+    stopPing();
     forgetSession();
     session?.onClose(null);
     session?.close();
@@ -212,6 +267,7 @@
   }
 
   function retry(): void {
+    stopPing();
     session?.onClose(null);
     session?.close();
     session = null;
@@ -269,13 +325,29 @@
     };
   });
 
-  const roundTitle = $derived(
-    round
-      ? $t('round.title')
-          .replace('{n}', String(round.roundIndex + 1))
-          .replace('{total}', round.roundCount === 0 ? '∞' : String(round.roundCount))
+  function roundTitleFor(index: number, count: number): string {
+    return $t('round.title')
+      .replace('{n}', String(index + 1))
+      .replace('{total}', count === 0 ? '∞' : String(count));
+  }
+
+  const roundTitle = $derived(round ? roundTitleFor(round.roundIndex, round.roundCount) : '');
+  const resultsTitle = $derived(
+    results ? roundTitleFor(results.roundIndex, results.roundCount) : '',
+  );
+  const voteQuestion = $derived(
+    vote
+      ? $t('review.vote.question')
+          .replace('{word}', vote.word)
+          .replace('{category}', vote.category.label.toLocaleLowerCase())
       : '',
   );
+
+  function statusLabel(status: string): string {
+    if (status === 'valid') return $t('review.unique');
+    if (status === 'shared') return $t('review.shared');
+    return $t('review.invalid');
+  }
 </script>
 
 <div class="join">
@@ -362,6 +434,70 @@
     <div class="center">
       <div class="emoji">👀</div>
       <p class="big">{$t('join.waiting')}</p>
+    </div>
+  {:else if phase === 'vote' && vote}
+    <div class="center">
+      <div class="emoji">🤔</div>
+      <p class="big">{voteQuestion}</p>
+      <div class="vote-actions">
+        <Button variant="primary" block onclick={() => castVote('yes')}
+          >{$t('review.vote.yes')}</Button
+        >
+        <Button variant="danger" block onclick={() => castVote('no')}>{$t('review.vote.no')}</Button
+        >
+      </div>
+    </div>
+  {:else if phase === 'voted'}
+    <div class="center">
+      <div class="emoji">🗳️</div>
+      <p class="big">{$t('join.vote.sent')}</p>
+    </div>
+  {:else if phase === 'results' && results}
+    <div class="letter-row">
+      <LetterTile letter={results.letter} />
+    </div>
+    <p class="round-title">{resultsTitle}</p>
+    <div class="cards">
+      {#each results.categories as cat (cat.id)}
+        <Card>
+          <div class="cat-header">
+            <span class="cat-emoji">{cat.emoji}</span>
+            <span class="cat-name">{cat.label}</span>
+          </div>
+          <ul class="answer-list">
+            {#each cat.answers as a (a.playerId)}
+              <li class="answer-row" class:me={a.playerId === playerId}>
+                <span class="player-name">{a.name}</span>
+                {#if a.word === ''}
+                  <span class="word-empty">—</span>
+                {:else}
+                  <span class="word" class:invalid={a.status === 'invalid'}>{a.word}</span>
+                  <span
+                    class="badge"
+                    class:success={a.status === 'valid'}
+                    class:warning={a.status === 'shared'}
+                    class:muted={a.status === 'invalid'}
+                  >
+                    {statusLabel(a.status)} · {a.points}
+                  </span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </Card>
+      {/each}
+      <Card>
+        <p class="standings-title">🏆 {$t('review.standings')}</p>
+        <div class="score-rows">
+          {#each results.standings as row (row.name)}
+            <div class="score-row">
+              <span class="score-name">{row.name}</span>
+              <b class="score-value">{row.score}</b>
+            </div>
+          {/each}
+        </div>
+      </Card>
+      <p class="round-title">{$t('join.results.next')}</p>
     </div>
   {:else if phase === 'scores' && scores}
     <div class="content">
@@ -598,6 +734,67 @@
   .cat-name {
     font-weight: var(--font-weight-subheading);
     font-size: var(--font-size-body);
+  }
+  .vote-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    inline-size: 100%;
+    max-inline-size: 320px;
+  }
+  .answer-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    list-style: none;
+  }
+  .answer-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .answer-row.me {
+    border-inline-start: var(--border-edge-width) solid var(--color-primary);
+    padding-inline-start: var(--space-2);
+  }
+  .player-name {
+    font-weight: var(--font-weight-subheading);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .word-empty {
+    color: var(--color-muted);
+  }
+  .word.invalid {
+    color: var(--color-muted);
+    text-decoration: line-through;
+  }
+  .badge {
+    border-radius: var(--radius-pill);
+    padding-block: var(--space-1);
+    padding-inline: var(--space-3);
+    font-weight: var(--font-weight-subheading);
+    font-size: var(--font-size-small);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .badge.success {
+    background: var(--color-success);
+    color: var(--color-on-success);
+  }
+  .badge.warning {
+    background: var(--color-warning);
+    color: var(--color-on-warning);
+  }
+  .badge.muted {
+    background: var(--color-border);
+    color: var(--color-muted);
+  }
+  .standings-title {
+    font-weight: var(--font-weight-subheading);
+    margin-block-end: var(--space-2);
   }
   .scores-title {
     font-size: var(--font-size-h1);

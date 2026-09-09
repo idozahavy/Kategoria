@@ -5,6 +5,11 @@
   import { AVATAR_EMOJI, fileToAvatar } from '../lib/avatar';
   import { BOT_AVATAR } from '../lib/bot';
   import { CATEGORY_EMOJI } from '../lib/categories';
+  import {
+    MAX_CATEGORY_NAME_LENGTH,
+    readCategoryPrefs,
+    writeCategoryPrefs,
+  } from '../lib/categoryprefs';
   import { listProfiles, saveGame, touchProfile } from '../lib/db';
   import {
     createGame,
@@ -24,6 +29,7 @@
     PlayerDef,
     ScoringSystem,
     ValidationMode,
+    VoteMode,
   } from '../lib/types';
   import Avatar from '../lib/ui/Avatar.svelte';
   import Button from '../lib/ui/Button.svelte';
@@ -69,8 +75,6 @@
     nameKey: k,
     emoji: CATEGORY_EMOJI[k],
   }));
-
-  const MAX_CATEGORY_NAME_LENGTH = 24;
 
   let step = $state(1);
   let stepError = $state('');
@@ -152,10 +156,16 @@
       .catch(() => (qrDataUrl = ''));
   });
 
-  // Step 2
+  // Step 2 — categories start from the set the last game used (the picked
+  // ones and the family's own), falling back to the classic five.
+  const savedPrefs = readCategoryPrefs(BUILTIN_CATEGORY_KEYS);
   let mode = $state<GameMode>('classic');
-  let customCategories = $state<CategoryDef[]>([]);
-  let selectedCategoryIds = $state<string[]>([...DEFAULT_CATEGORY_IDS]);
+  let customCategories = $state<CategoryDef[]>(savedPrefs?.custom ?? []);
+  let selectedCategoryIds = $state<string[]>(
+    savedPrefs !== null && savedPrefs.selectedIds.length > 0
+      ? savedPrefs.selectedIds
+      : [...DEFAULT_CATEGORY_IDS],
+  );
   let newCategoryName = $state('');
   let categoryError = $state('');
 
@@ -166,8 +176,9 @@
   let isEndless = $state(false);
   let hasWikidataCheck = $state(true);
   let hasFunFacts = $state(true);
-  let hasSpeedScoring = $state(false);
+  let hasSpeedScoring = $state(true);
   let validation = $state<ValidationMode>('hybrid');
+  let voteMode = $state<VoteMode>('devices');
   let gameLanguage = $state($uiLanguage);
 
   const allCategories: CategoryDef[] = $derived([...builtinCategories, ...customCategories]);
@@ -229,21 +240,35 @@
       : [...selectedCategoryIds, id];
   }
 
-  function addCustomCategory(): void {
+  /**
+   * Add the typed category and select it (a name already in the list is
+   * re-selected instead of duplicated). False when the name was rejected.
+   */
+  function addCustomCategory(): boolean {
     const name = newCategoryName.trim();
     if (!name) {
       categoryError = $t('setup.error.categoryEmpty');
-      return;
+      return false;
     }
     if (name.length > MAX_CATEGORY_NAME_LENGTH) {
       categoryError = $t('setup.error.categoryTooLong');
-      return;
+      return false;
     }
     categoryError = '';
-    const cat: CategoryDef = { id: newId(), customName: name };
-    customCategories = [...customCategories, cat];
-    selectedCategoryIds = [...selectedCategoryIds, cat.id];
+    const existing = customCategories.find(
+      (c) => c.customName?.toLocaleLowerCase() === name.toLocaleLowerCase(),
+    );
+    if (existing) {
+      if (!selectedCategoryIds.includes(existing.id)) {
+        selectedCategoryIds = [...selectedCategoryIds, existing.id];
+      }
+    } else {
+      const cat: CategoryDef = { id: newId(), customName: name };
+      customCategories = [...customCategories, cat];
+      selectedCategoryIds = [...selectedCategoryIds, cat.id];
+    }
     newCategoryName = '';
+    return true;
   }
 
   /** Empty string when everything up to the current step is valid; the error message otherwise. */
@@ -262,6 +287,8 @@
   }
 
   function nextStep(): void {
+    // A category typed but never "added" is still wanted — take it along.
+    if (step === 2 && newCategoryName.trim() !== '' && !addCustomCategory()) return;
     stepError = validateStep();
     if (stepError !== '') return;
     step = Math.min(3, step + 1);
@@ -312,6 +339,11 @@
     const categories = allCategories
       .filter((c) => selectedCategoryIds.includes(c.id))
       .map((c) => ({ ...c }));
+    // The next game starts from this set.
+    writeCategoryPrefs({
+      selectedIds: [...selectedCategoryIds],
+      custom: customCategories.map((c) => ({ ...c })),
+    });
     const settings: GameSettings = {
       language: gameLanguage,
       mode,
@@ -326,6 +358,7 @@
       timerSeconds,
       isRemote,
       roomCode: isRemote ? roomCode : undefined,
+      voteMode: isRemote ? voteMode : undefined,
     };
     const state = createGame(settings, finalPlayers);
     startNextRound(state);
@@ -480,7 +513,9 @@
       </div>
 
       <h2 class="section-title">{$t('setup.categories')}</h2>
-      <p class="section-hint">{$t('setup.categories.hint')}</p>
+      {#if savedPrefs === null}
+        <p class="section-hint">{$t('setup.categories.hint')}</p>
+      {/if}
       <div class="chip-grid">
         {#each builtinCategories as cat (cat.id)}
           <Chip on={selectedCategoryIds.includes(cat.id)} onclick={() => toggleCategory(cat.id)}>
@@ -517,6 +552,30 @@
         <Button variant="secondary" onclick={addCustomCategory}>{$t('setup.addCategory')}</Button>
       </div>
     {:else}
+      {#if playStyle === 'remote'}
+        <h2 class="section-title">{$t('setup.voting')}</h2>
+        <div class="mode-grid">
+          <button
+            type="button"
+            class="mode-card"
+            class:selected={voteMode === 'devices'}
+            onclick={() => (voteMode = 'devices')}
+          >
+            <span class="mode-title">📱 {$t('setup.voting.devices')}</span>
+            <span class="mode-hint">{$t('setup.voting.devices.hint')}</span>
+          </button>
+          <button
+            type="button"
+            class="mode-card"
+            class:selected={voteMode === 'host'}
+            onclick={() => (voteMode = 'host')}
+          >
+            <span class="mode-title">📺 {$t('setup.voting.host')}</span>
+            <span class="mode-hint">{$t('setup.voting.host.hint')}</span>
+          </button>
+        </div>
+      {/if}
+
       {#if playerCount > 1}
         <h2 class="section-title">{$t('setup.scoring')}</h2>
         <div class="mode-grid">
@@ -627,7 +686,7 @@
       <Button
         variant="accent"
         block
-        disabled={step === 2 && !canProceedCategories}
+        disabled={step === 2 && !canProceedCategories && newCategoryName.trim() === ''}
         onclick={nextStep}
       >
         {$t('setup.next')}

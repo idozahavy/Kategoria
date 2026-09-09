@@ -194,6 +194,27 @@ describe('host room lobby', () => {
     expect(sentTypes(ida.conn)).toEqual(['welcome', 'roster', 'roster', 'ended']);
     expect(sentTypes(ido.conn)).toEqual(['welcome', 'roster', 'ended', 'received']);
   });
+
+  it('onGuestMessage: unsubscribing clears only a handler that is still current', async () => {
+    const { room, peer } = await openRoom();
+    const { conn } = seatGuest(peer, 'Ida');
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+    const stopFirst = room.onGuestMessage((_, msg) => {
+      first.push(msg);
+    });
+    const stopSecond = room.onGuestMessage((_, msg) => {
+      second.push(msg);
+    });
+    stopFirst(); // a screen tearing down late must not drop the next screen's handler
+    const ballot = { type: 'vote', voteId: 'v-1', choice: 'yes' };
+    conn.emit('data', ballot);
+    expect(first).toEqual([]);
+    expect(second).toEqual([ballot]);
+    stopSecond();
+    conn.emit('data', ballot);
+    expect(second).toHaveLength(1);
+  });
 });
 
 describe('TURN lookup failures (never remembered)', () => {
@@ -224,7 +245,8 @@ describe('active room singleton', () => {
       broadcast: () => undefined,
       sendTo: () => undefined,
       onGuestsChange: () => undefined,
-      onGuestMessage: () => undefined,
+      onGuestMessage: () => () => undefined,
+      connectedIds: () => [],
       lock: () => undefined,
       close: () => {
         closed += 1;

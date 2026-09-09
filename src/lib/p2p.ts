@@ -3,6 +3,8 @@ import Peer, { type DataConnection, type PeerJSOption } from 'peerjs';
 import { newId } from './game';
 import { readStorage, writeStorage } from './storage';
 import { getTurnstileToken } from './turnstile';
+import type { AnswerStatus } from './types';
+import type { VoteChoice } from './vote';
 
 /**
  * P2P room layer (WebRTC via PeerJS + its free public broker for signaling).
@@ -12,15 +14,31 @@ import { getTurnstileToken } from './turnstile';
  */
 
 /** Category as shown on a guest device (label pre-resolved in the game language). */
-interface RoundCategory {
+export interface RoundCategory {
   id: string;
   label: string;
   emoji: string;
 }
 
+/** One player's answer in a category, as shown on every phone after a round. */
+export interface ResultAnswer {
+  playerId: string;
+  name: string;
+  word: string;
+  status: AnswerStatus;
+  points: number;
+}
+
+export interface ResultCategory extends RoundCategory {
+  answers: ResultAnswer[];
+}
+
 export type GuestMessage =
   | { type: 'hello'; name: string; avatar?: string; deviceId?: string }
-  | { type: 'answers'; roundIndex: number; answers: Record<string, string> };
+  | { type: 'answers'; roundIndex: number; answers: Record<string, string> }
+  | { type: 'vote'; voteId: string; choice: VoteChoice }
+  /** Heartbeat — a closed tab or dead network rarely closes the connection promptly. */
+  | { type: 'ping' };
 
 export type HostMessage =
   | { type: 'welcome'; playerId: string }
@@ -35,6 +53,16 @@ export type HostMessage =
       categories: RoundCategory[];
     }
   | { type: 'received' }
+  | { type: 'vote'; voteId: string; word: string; category: RoundCategory }
+  | {
+      type: 'results';
+      roundIndex: number;
+      roundCount: number;
+      letter: string;
+      categories: ResultCategory[];
+      /** Best totals so far, top first. */
+      standings: { name: string; score: number }[];
+    }
   | { type: 'scores'; rows: { name: string; score: number }[]; winner: string }
   | { type: 'ended' };
 
@@ -59,11 +87,16 @@ const MAX_DEVICE_ID_LENGTH = 64;
 export const MAX_ANSWER_LENGTH = 40;
 const MAX_ANSWER_ENTRIES = 50;
 const MAX_CATEGORY_ID_LENGTH = 64;
+const MAX_VOTE_ID_LENGTH = 64;
 const JOIN_TIMEOUT_MS = 12000;
 /** Wait for the last outgoing message to flush before tearing the connection down. */
 const CLOSE_FLUSH_MS = 500;
 /** Pause between retries when the broker still holds our peer id from a previous session. */
 const REOPEN_RETRY_MS = 2000;
+/** Guests send a ping this often while in a room. */
+export const PING_INTERVAL_MS = 4000;
+/** A seat silent for longer than this (three missed pings) no longer counts as connected. */
+export const STALE_AFTER_MS = 12_000;
 
 const DEVICE_ID_KEY = 'categories-device-id';
 const sessionDeviceId = newId();
@@ -145,7 +178,16 @@ export function isGuestMessage(v: unknown): v is GuestMessage {
       )
     );
   }
-  return false;
+  if (m['type'] === 'vote') {
+    const voteId = m['voteId'];
+    return (
+      typeof voteId === 'string' &&
+      voteId !== '' &&
+      voteId.length <= MAX_VOTE_ID_LENGTH &&
+      (m['choice'] === 'yes' || m['choice'] === 'no')
+    );
+  }
+  return m['type'] === 'ping';
 }
 
 function isHostMessage(v: unknown): v is HostMessage {
@@ -153,7 +195,17 @@ function isHostMessage(v: unknown): v is HostMessage {
   const m = v as Record<string, unknown>;
   return (
     typeof m['type'] === 'string' &&
-    ['welcome', 'roster', 'busy', 'round', 'received', 'scores', 'ended'].includes(m['type'])
+    [
+      'welcome',
+      'roster',
+      'busy',
+      'round',
+      'received',
+      'vote',
+      'results',
+      'scores',
+      'ended',
+    ].includes(m['type'])
   );
 }
 
@@ -240,7 +292,14 @@ export interface HostRoom {
   broadcast(msg: HostMessage): void;
   sendTo(playerId: string, msg: HostMessage): void;
   onGuestsChange(cb: ((guests: GuestInfo[]) => void) | null): void;
-  onGuestMessage(cb: ((playerId: string, msg: GuestMessage) => void) | null): void;
+  /**
+   * Replace the guest-message handler. Returns an unsubscribe that only
+   * clears the handler while it is still the current one, so a screen tearing
+   * down can't drop the handler the next screen already installed.
+   */
+  onGuestMessage(cb: ((playerId: string, msg: GuestMessage) => void) | null): () => void;
+  /** Players whose device is connected and has been heard from recently. */
+  connectedIds(): string[];
   /** Stop accepting new joins (called when the game starts). */
   lock(): void;
   close(): void;
@@ -336,23 +395,31 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
     name: string;
     avatar?: string;
     deviceId?: string;
+    /** Epoch ms of the last message on the live connection — pings keep it fresh. */
+    lastSeenAt: number;
   }
   const seats = new Map<string, Seat>();
   let locked = false;
   if (seed) {
     // Reopened room: every player already has a seat, waiting for its guest.
     for (const p of seed) {
-      seats.set(p.playerId, { conn: null, name: p.name, avatar: p.avatar, deviceId: p.deviceId });
+      seats.set(p.playerId, {
+        conn: null,
+        name: p.name,
+        avatar: p.avatar,
+        deviceId: p.deviceId,
+        lastSeenAt: 0,
+      });
     }
     locked = true;
   }
   let guestsChangeCb: ((guests: GuestInfo[]) => void) | null = null;
   let guestMessageCb: ((playerId: string, msg: GuestMessage) => void) | null = null;
   let seatCounter = 0;
-  // Replayed to reconnecting guests so they land on the current screen.
-  let lastRound: Extract<HostMessage, { type: 'round' }> | null = null;
+  // Replayed to reconnecting guests so they land on the current screen: the
+  // latest of round / vote / results / scores.
+  let lastScreen: HostMessage | null = null;
   let lastRoundAt = 0;
-  let lastScores: HostMessage | null = null;
 
   const guests = (): GuestInfo[] =>
     [...seats.entries()].map(([playerId, s]) => ({
@@ -363,22 +430,24 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
     }));
 
   const broadcast = (msg: HostMessage): void => {
-    if (msg.type === 'round') {
-      lastRound = msg;
-      lastRoundAt = Date.now();
-      lastScores = null;
-    } else if (msg.type === 'scores') {
-      lastScores = msg;
+    if (msg.type === 'round') lastRoundAt = Date.now();
+    if (
+      msg.type === 'round' ||
+      msg.type === 'vote' ||
+      msg.type === 'results' ||
+      msg.type === 'scores'
+    ) {
+      lastScreen = msg;
     }
     for (const s of seats.values()) if (s.conn) void s.conn.send(msg);
   };
 
-  /** The saved round message with its timer reduced by the time already spent. */
-  const replayRound = (): HostMessage | null => {
-    if (!lastRound) return null;
-    if (lastRound.seconds === null) return lastRound;
+  /** The saved screen message; a round's timer is reduced by the time already spent. */
+  const replayScreen = (): HostMessage | null => {
+    if (!lastScreen) return null;
+    if (lastScreen.type !== 'round' || lastScreen.seconds === null) return lastScreen;
     const elapsed = Math.floor((Date.now() - lastRoundAt) / 1000);
-    return { ...lastRound, seconds: Math.max(lastRound.seconds - elapsed, 0) };
+    return { ...lastScreen, seconds: Math.max(lastScreen.seconds - elapsed, 0) };
   };
 
   const notifyRoster = (): void => {
@@ -409,14 +478,14 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
       // seat no longer points at it, so it can't drop the reclaimed seat.
       const stale = seat.conn;
       seat.conn = conn;
+      seat.lastSeenAt = Date.now();
       stale?.close();
       seatId = playerId;
       void conn.send({ type: 'welcome', playerId } satisfies HostMessage);
       if (locked) {
         void conn.send({ type: 'roster', names: guests().map((g) => g.name) });
-        const round = replayRound();
-        if (lastScores) void conn.send(lastScores);
-        else if (round) void conn.send(round);
+        const current = replayScreen();
+        if (current) void conn.send(current);
       } else {
         notifyRoster();
       }
@@ -472,13 +541,19 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
           name: uniqueName(wanted),
           avatar: sanitizeAvatar(data.avatar),
           deviceId,
+          lastSeenAt: Date.now(),
         });
         seatId = playerId;
         void conn.send({ type: 'welcome', playerId } satisfies HostMessage);
         notifyRoster();
         return;
       }
-      if (seatId && seats.get(seatId)?.conn === conn) guestMessageCb?.(seatId, data);
+      if (!seatId) return;
+      const seat = seats.get(seatId);
+      if (!seat || seat.conn !== conn) return;
+      seat.lastSeenAt = Date.now();
+      if (data.type === 'ping') return; // liveness only — nothing for the screens
+      guestMessageCb?.(seatId, data);
     });
 
     const dropped = (): void => {
@@ -508,6 +583,15 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
     },
     onGuestMessage: (cb) => {
       guestMessageCb = cb;
+      return () => {
+        if (guestMessageCb === cb) guestMessageCb = null;
+      };
+    },
+    connectedIds: () => {
+      const now = Date.now();
+      return [...seats.entries()]
+        .filter(([, s]) => s.conn !== null && now - s.lastSeenAt <= STALE_AFTER_MS)
+        .map(([playerId]) => playerId);
     },
     lock: () => {
       locked = true;

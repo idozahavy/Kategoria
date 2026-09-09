@@ -30,6 +30,19 @@ describe('isGuestMessage (untrusted P2P input)', () => {
     );
   });
 
+  it('accepts a well-formed ballot and rejects a bad one', () => {
+    expect(isGuestMessage({ type: 'vote', voteId: 'v-1', choice: 'yes' })).toBe(true);
+    expect(isGuestMessage({ type: 'vote', voteId: 'v-1', choice: 'no' })).toBe(true);
+    expect(isGuestMessage({ type: 'vote', voteId: '', choice: 'yes' })).toBe(false);
+    expect(isGuestMessage({ type: 'vote', voteId: 'x'.repeat(65), choice: 'yes' })).toBe(false);
+    expect(isGuestMessage({ type: 'vote', voteId: 'v-1', choice: 'maybe' })).toBe(false);
+    expect(isGuestMessage({ type: 'vote', choice: 'yes' })).toBe(false);
+  });
+
+  it('accepts the bare heartbeat', () => {
+    expect(isGuestMessage({ type: 'ping' })).toBe(true);
+  });
+
   it('rejects malformed or hostile payloads', () => {
     expect(isGuestMessage(null)).toBe(false);
     expect(isGuestMessage('hello')).toBe(false);

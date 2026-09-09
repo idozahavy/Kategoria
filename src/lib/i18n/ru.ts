@@ -152,6 +152,18 @@ export const ru: LanguagePack = {
     'join.error.hostLeft': 'Игра завершена.',
     'join.error.disconnected': 'Связь пропала! Нажми «Попробовать снова», чтобы вернуться.',
 
+    'setup.voting': 'Голосование за слова',
+    'setup.voting.devices': 'Голосовать на телефонах',
+    'setup.voting.devices.hint':
+      'Каждый нажимает 👍 или 👎 — половина и больше «за», и слово засчитано',
+    'setup.voting.host': 'Решать на большом экране',
+    'setup.voting.host.hint': 'Обсудите и нажмите вместе',
+    'review.vote.phones': 'Голосуйте на телефонах!',
+    'review.vote.count': 'Проголосовали {n} из {total}',
+    'review.vote.decideHere': 'Или решите здесь:',
+    'review.standings': 'Турнирная таблица',
+    'join.vote.sent': 'Голос отправлен! Ждём остальных…',
+    'join.results.next': 'Следующий раунд начнётся на большом экране',
     'error.wordCheck': 'Не получилось проверить слово — проголосуем?',
     'common.cancel': 'Отмена',
     'common.ok': 'ОК',
