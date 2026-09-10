@@ -31,11 +31,11 @@ Line coverage per path that `/test-gaps check` treats as a regression when cross
 Floors are today's value rounded down to a multiple of 5, so a check never accepts less than now.
 
 - `src/lib/game.ts: 95`
-- `src/lib/p2p.ts: 95`
+- `src/lib/p2p.ts: 100`
 - `src/lib/vote.ts: 100`
-- `src/lib/turnstile.ts: 75`
+- `src/lib/turnstile.ts: 100`
 - `functions/turn-credentials.ts: 100`
-- `src/lib/qrscan.ts: 50`
+- `src/lib/qrscan.ts: 100`
 - `src/screens/Round.svelte: 0`
 - `src/screens/Join.svelte: 0`
 - `src/screens/Scoreboard.svelte: 0`
