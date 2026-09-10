@@ -8,18 +8,26 @@ interface Tone {
 }
 
 /** A WebAudio stand-in that records every oscillator instead of making noise. */
-function stubAudio(): { tones: Tone[]; contexts: () => number } {
+function stubAudio(initialState: 'running' | 'suspended' = 'running'): {
+  tones: Tone[];
+  contexts: () => number;
+  resumes: () => number;
+} {
   const tones: Tone[] = [];
   let created = 0;
+  let resumed = 0;
   class FakeAudioContext {
-    state = 'running';
+    state = initialState;
     currentTime = 0;
     destination = {};
     constructor() {
       created += 1;
     }
     resume(): Promise<void> {
-      return Promise.resolve();
+      resumed += 1;
+      return Promise.resolve().then(() => {
+        this.state = 'running'; // the real context flips only once the promise settles
+      });
     }
     createGain() {
       const node = {
@@ -41,7 +49,7 @@ function stubAudio(): { tones: Tone[]; contexts: () => number } {
     }
   }
   vi.stubGlobal('AudioContext', FakeAudioContext);
-  return { tones, contexts: () => created };
+  return { tones, contexts: () => created, resumes: () => resumed };
 }
 
 function stubStorage(saved: string | null): Map<string, string> {
@@ -109,6 +117,14 @@ describe('chimes', () => {
     expect(audio.tones.slice(2).map((t) => t.freq)).toEqual([523, 659, 784, 1047]);
     expect(audio.tones.slice(2).every((t) => t.type === 'triangle')).toBe(true);
     expect(audio.contexts()).toBe(1);
+  });
+
+  it('wakes a context the browser left suspended before playing', async () => {
+    const audio = stubAudio('suspended');
+    const { sound } = await loadSound(null);
+    sound.playTick();
+    expect(audio.resumes()).toBe(1);
+    expect(audio.tones).toHaveLength(1);
   });
 
   it('tick is a short square click', async () => {
