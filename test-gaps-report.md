@@ -1,252 +1,164 @@
 # Test gaps report - Kategoria
 
-Mapped 2026-09-04 at commit 3120cba. Scope: whole repo. Runner: vitest 4.1.11 (node v24.18.0), colocated `*.test.ts`.
-
-## Result so far (full run 2026-09-04 --top 15, plus write pass 2026-09-05 for GAP-016/017/020)
-
-| Metric                      | Before             | After                       |
-| --------------------------- | ------------------ | --------------------------- |
-| tests                       | 66                 | 146                         |
-| line_pct                    | 34.84              | 78.36                       |
-| branch_pct_lit              | 40.3               | 80.5                        |
-| dark_files (incl. types.ts) | 12                 | 3                           |
-| functions_unexecuted        | 119                | 37                          |
-| mutation_score              | n/a                | n/a                         |
-| suite wall time             | 6.2 s (1 cold run) | 2.2 s (mean of 3 warm runs) |
-| tests written / red-proven  | -                  | 80 / 80                     |
-
-Gaps closed: Phase B 8 (GAP-001..008), Phase C 4 (GAP-009..012), Phase E 3 (GAP-013..015). Phase F regressions 82cd032 and ed9abc7 are inside GAP-013 and GAP-005; 25f020f was already covered. Phase G: no end-to-end harness, nothing written.
-
-Reconciliation: p2p.ts at 98 % lines and BUG-001 (`p2p.ts:150`, host messages unvalidated on the guest) and BUG-002 (`p2p.ts:557`) are still open; one GAP-002 case is held back on BUG-002; one GAP-011 case is `needs-seam`; the user-named "game timeouts / waiting" behavior in the Svelte screens has no test because the repo has no DOM test environment (GAP-019, `needs-harness`).
-
-Left open: GAP-018 db.ts and GAP-019 screens (`needs-harness`); GAP-021, GAP-022 (`needs-harness`, Low).
-
-Suite health after Phase A: nothing un-skipped, deleted or quarantined - the suite was clean. One test written this run was deleted before commit as a tautology (see state file).
-
-Commits: 3120cba coverage tooling, 5696728 map, 7cda361 Phase B, f0eb630 + 0b03989 Phase C, d3b5049 Phase E, 40f3058 second write pass (GAP-016/017/020).
-
-## Before this run
-
-Baseline at 3120cba: 66 tests, line_pct 34.84, branch_pct_lit 40.3, dark_files 12, functions_unexecuted 119, wall 6237 ms (single cold run). Per-file: p2p.ts 17.15 % lines, validation.ts 27.13 %, stores.ts 0 %, turn-credentials.ts 0 %, game.ts 97.72 %, i18n/index.ts 72.72 %, words/index.ts 87.5 %.
+Mapped 2026-09-10 at commit 660072b (previous map 3120cba, 2026-09-04; 25 commits since). Scope: whole repo. Runner: vitest 4.1.11 (node v24.18.0), colocated `*.test.ts`.
+HTML version: `test-gaps-report.html` (gitignored).
 
 ## 1. Must-cover violations
 
-- **"game timeouts, waiting for game to proceed"** (opening question) - lives in `src/screens/Round.svelte` (round timer, time-up), `src/screens/Join.svelte` (guest waiting) and `src/screens/Scoreboard.svelte` (auto-continue). Zero tests; no DOM test environment exists (no jsdom, no @testing-library/svelte), so this is `needs-harness` (GAP-019). Smallest seam: extract the countdown into `src/lib/timer.ts` (pure tick function taking `now`) so the logic is testable without a DOM.
-- `src/lib/p2p.ts` was at 17.15 % lines before this run; now 98.17 % (GAP-001..008 done).
-- `src/lib/game.ts` at 97.72 % lines - compliant.
+Must-cover paths with no covering test: 4 (all `needs-harness`, no DOM test environment in the repo)
 
-No `docs/project/CONVENTIONS.md` exists; no conflicts. No `CLEANUP.md`; nothing excluded by it. `/cleanup` hand-off found in `.cleanup-state.md` (flags: p2p host seat reclaim, network validation paths, db.ts untested) - all seeded into the map.
+- `src/screens/Round.svelte` - round timer / time-up (GAP-019)
+- `src/screens/Join.svelte` - guest waiting for the host (GAP-019)
+- `src/screens/Scoreboard.svelte` - auto-continue countdown (GAP-019)
+- `src/screens/Review.svelte` - device-vote ballot orchestration (GAP-019, added to must-cover this run)
+
+The other must-cover paths are covered: game.ts 100 % lines, p2p.ts 98.3 %, vote.ts 100 %, turn-credentials.ts 100 %, turnstile.ts 79.5 % (floor 75), qrscan.ts 52.5 % (floor 50).
+No `docs/project/CONVENTIONS.md` - `TESTING.md` is the only policy file. No `/cleanup` hand-off found (`.cleanup-state.md` has no `## untested-critical`).
 
 ## 2. Suite health
 
-- Failing: none (66/66 pass). Type check (`svelte-check`): 0 errors, 0 warnings.
-- Skipped / todo / only: none.
-- Flaky: two consecutive runs identical. Sweep hits: `Math.random` spied in bot.test.ts:11 and game.test.ts:141-148 (deterministic mocks, restored in afterEach) - fine. No real timers, network, or sleeps in tests.
-- Tautologies: none found. storage.test.ts:41,44 use `not.toThrow()` but the same test also asserts the null read. qrscan.test.ts:45 error assertion carries its message.
-- Snapshot tests: 0.
-- Expired quarantines: none (no quarantine list existed).
-- Slowest tests: not reported by the runner at this size (whole suite 106 ms of test time, 6.2 s wall including startup).
+- Failing: 0 of 203 (26 files). `svelte-check`: 0 errors, 0 warnings.
+- Skipped / todo / only: 0.
+- Flaky: 0 - three consecutive runs identical (2445 / 2325 / 2310 ms). Grep sweep: one real `setTimeout` inside a fetch fake (validation.wikidata.test.ts:119, under fake timers - fine); the `Math.random` hit is a comment.
+- Tautologies: 0 - every `not.toThrow()` / `toBeDefined()` / `not.toBeNull()` (10 hits) sits beside at least one outcome assertion in the same test.
+- Snapshots: 0.
+- Quarantines: none, none expired.
+- Slowest tests: not reported by the runner in this configuration (whole suite 1.6 s of test time).
 
 ## 3. Tooling
 
-| Tool                                | Status                                                         |
-| ----------------------------------- | -------------------------------------------------------------- |
-| vitest 4.1.11                       | found (repo devDependency)                                     |
-| @vitest/coverage-v8 4.1.11          | was missing - added pinned to devDependencies (commit 3120cba) |
-| svelte-check 4                      | found                                                          |
-| mutation tool (Stryker)             | not installed - not added                                      |
-| end-to-end harness                  | none                                                           |
-| DOM environment (jsdom / happy-dom) | none                                                           |
+| Tool | Status |
+| --- | --- |
+| vitest 4.1.11 | found (repo devDependency) |
+| @vitest/coverage-v8 4.1.11 | found (repo devDependency) |
+| svelte-check 4 | found |
+| mutation tool | none configured - not installed |
+| DOM env (jsdom / happy-dom / @testing-library) | not installed - Svelte screens untestable |
+| fake-indexeddb | not installed - db.ts untestable |
 
-Excluded from coverage (vitest.config.ts): `**/*.test.ts`, `src/vite-env.d.ts`, `src/main.ts`, `src/lib/i18n/{ar,en,es,fr,he,ru}.ts`, `src/lib/words/*.json`. Svelte components are not in the include list: the coverage provider cannot parse untransformed `.svelte` files, so every screen/component is a **Suspected** gap tagged `excluded-from-coverage`.
+Excluded from coverage (vitest.config.ts): `**/*.test.ts`, `**/*.test-helpers.ts`, `src/vite-env.d.ts`, `src/main.ts`, `src/lib/i18n/{ar,en,es,fr,he,ru}.ts`, `src/lib/words/*.json`. `.svelte` files are outside the `include` list, so screens carry no coverage number at all (Suspected only).
 
-Baseline: line_pct 34.84, branch_pct_lit 40.3 (over the 11 files with at least one covered line), dark_files 12 (incl. 7 Svelte-free TS files + turn-credentials), functions_unexecuted 119 / 185, mutation_score n/a.
+Coverage baseline (`npx vitest run --coverage`):
 
-Two artifacts to keep in mind: raw branch % (37.25) is inflated by the synthetic branch of never-loaded files; bot/categories/session/storage/theme at 100 % are tiny modules.
+| Metric | Value |
+| --- | --- |
+| line_pct | 86.18 |
+| branch_pct_lit (files with >= 1 covered line) | 84.1 |
+| dark_files | 1 (`src/lib/avatar.ts`; `types.ts` is type-only and excluded) |
+| functions_unexecuted | 34 (19 of them in db.ts, 5 in qrscan.ts) |
+| mutation_score | not measured |
+| wall time | 2325 ms median of 3 |
 
 ## 4. Summary table
 
-Rank = points / effort weight (S=1, M=2, L=4). Evidence: M = Measured by coverage, S = Suspected.
+Rank = points / effort weight (S=1, M=2, L=4), ties by path. Only `open` gaps and the harness-blocked ones are listed; the 20 gaps closed in earlier runs stay `done` in `.test-gaps-state.md`.
 
-| #   | ID      | Unit (file:line)                                                    | Points | Effort | Ev  | Phase | Status        |
-| --- | ------- | ------------------------------------------------------------------- | ------ | ------ | --- | ----- | ------------- |
-| 1   | GAP-004 | p2p.ts:515 setActiveRoom / getActiveRoom                            | 9      | S      | M   | B     | done          |
-| 2   | GAP-009 | game.ts:14 newId fallback (no crypto.randomUUID)                    | 7      | S      | M   | C     | done          |
-| 3   | GAP-010 | game.ts:55 drawLetter / startNextRound defensive branches           | 6      | S      | M   | C     | done          |
-| 4   | GAP-001 | p2p.ts:234 createRoom + buildHostRoom lobby                         | 10     | M      | M   | B     | done          |
-| 5   | GAP-002 | p2p.ts:537 joinRoom (+ isHostMessage, getDeviceId)                  | 10     | M      | M   | B     | done          |
-| 6   | GAP-003 | p2p.ts:316 host room after lock: reconnect, seat reclaim, close     | 10     | M      | M   | B     | done          |
-| 7   | GAP-005 | stores.ts:15 updateGame                                             | 9      | M      | M   | B     | done          |
-| 8   | GAP-008 | p2p.ts:275 reopenRoom                                               | 9      | M      | M   | B     | done          |
-| 9   | GAP-006 | p2p.ts:190 fetchPeerOptions / getPeerOptions (TURN)                 | 8      | M      | M   | B     | done          |
-| 10  | GAP-007 | functions/turn-credentials.ts:44 onRequestPost                      | 7      | M      | M   | B     | done          |
-| 11  | GAP-013 | validation.ts:309 inPublicDictionary + lookupWiktionary             | 6      | M      | M   | E/F   | done          |
-| 12  | GAP-014 | validation.ts:43 checkWord dictionary / hybrid paths                | 6      | M      | M   | E     | done          |
-| 13  | GAP-015 | validation.ts:161 wordFact                                          | 6      | M      | M   | E     | done          |
-| 14  | GAP-011 | words/index.ts:12 ensureWords unknown language / failed chunk       | 3      | S      | M   | C     | done          |
-| 15  | GAP-012 | i18n/index.ts:36 detectInitialLanguage / persistLanguage / applyDir | 5      | M      | M   | C     | done          |
-| 16  | GAP-016 | validation.ts:250 inWikidataCategory                                | 5      | M      | M   | E     | done          |
-| 17  | GAP-017 | validation.ts:114 inLearnedList / learnWord / forgetWord            | 5      | M      | M   | E     | done          |
-| 18  | GAP-018 | db.ts:62 all IndexedDB functions                                    | 8      | L      | M   | E     | needs-harness |
-| 19  | GAP-020 | sound.ts soundOn + chimes                                           | 4      | M      | M   | E     | done          |
-| 20  | GAP-019 | Round/Join/Scoreboard.svelte timers and waiting                     | 7      | L      | S   | G     | needs-harness |
-| -   | GAP-021 | avatar.ts:32 fileToAvatar                                           | 4      | L      | M   | E     | needs-harness |
-| -   | GAP-022 | qrscan.ts:23 hasCamera / decodeWithCanvas                           | 3      | L      | M   | E     | needs-harness |
+| # | ID | Unit (file:line) | Points | Effort | Evidence | Phase | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | GAP-026 | src/lib/p2p.ts:145 guards: over-long avatar, non-object ICE entry, non-object TURN body | 11 Critical | S | M | B | open |
+| 2 | GAP-025 | functions/turn-credentials.ts:54 non-object token body, no caller IP, siteverify without `success` | 7 High | S | M | B | open |
+| 3 | GAP-029 | src/lib/categoryprefs.ts:23 parseCustom: 50-entry cap, non-string customName | 6 Medium | S | M | D | open |
+| 4 | GAP-027 | src/lib/p2p.ts:360 lifecycle edges: reopen timeout, stale-conn ping, lobby avatar keep, conn error after join | 11 Critical | M | M | B | open |
+| 5 | GAP-023 | src/lib/qrscan.ts:80 startQrScan poll loop: native detector, decode error, not-ready frames | 9 High | M | M | E | open |
+| 6 | GAP-030 | src/lib/sound.ts:27 audio(): suspended context is resumed | 4 Medium | S | M | E | open |
+| 7 | GAP-022 | src/lib/qrscan.ts:25 hasCamera + decodeWithCanvas (jsQR fallback) | 8 High | M | M | E | open |
+| 8 | GAP-028 | src/lib/validation.ts:92 checkWordWithin never throws; wordFact offline; Wikidata cooldown / queue; Wiktionary body without pages | 8 High | M | M | D | open |
+| 9 | GAP-024 | src/lib/turnstile.ts:34 script load failure retried, token timeout, api missing after load | 7 High | M | M | D | open |
+| 10 | GAP-018 | src/lib/db.ts:62 all IndexedDB functions | 8 High | L | M | E | needs-harness |
+| 11 | GAP-019 | src/screens Round / Join / Scoreboard / Review logic | 7 High | L | S | G | needs-harness |
+| 12 | GAP-021 | src/lib/avatar.ts:32 fileToAvatar | 4 Medium | L | M | E | needs-harness |
 
-Uniform signals: churn (+1) applies to every file in the top 15 except stores.ts and turn-credentials.ts; noted per gap.
+Uniform signals: none - importer counts range 0..10 and churn 0..14 across the units.
 
 ## 5. Gaps in detail
 
-### GAP-004 setActiveRoom / getActiveRoom - p2p.ts:515
+### GAP-026 - p2p guards (src/lib/p2p.ts:145, :217, :250)
+- Why it matters: `isGuestMessage` and `isIceServerArray` are the only validation between untrusted P2P / HTTP payloads and the host's state; p2p.ts is imported from 8 files and changed 14 times in six months.
+- Untested: an avatar string over 400 000 chars (p2p.ts:158), a non-object entry in the ICE list (p2p.ts:220), a `/turn-credentials` body that is not an object (p2p.ts:264).
+- Test plan: see `.test-gaps-state.md`.
+- Boundaries to fake: fetch (already stubbed in p2p.host.test.ts), PeerJS (`vi.mock('peerjs')` via p2p.test-helpers).
+- Points 11 (+3 uncovered lines, +3 must-cover / untrusted input, +2 importers, +1 churn, +1 external input, +1 length). Effort S. Measured. Phase B. open.
 
-Why it matters: 6 importers (every screen that touches the room), must-cover, 0 lines covered, churn.
-Untested: replacing the room closes the previous one; setting the same room does not close it; null clears and closes.
-Test plan:
+### GAP-025 - turn-credentials token edge cases (functions/turn-credentials.ts:54, :72)
+- Why it matters: this endpoint hands out a two-hour TURN relay pass; every branch of the bot check is a way to get one for free.
+- Untested: a JSON body that is a string or array (line 58 - must count as no token), no `CF-Connecting-IP` header (line 85 - `remoteip` must be omitted, not sent as null), a siteverify 200 whose body lacks `success` (line 92 - must be `failed`, not `passed`).
+- Boundaries to fake: fetch (stubVerifyThenMint helper exists).
+- Points 7 (+2 branches, +3 auth / must-cover, +1 external input, +1 branches > 5). Effort S. Measured. Phase B. open.
 
-- given room A active / when setActiveRoom(B) / then A.close() called once, getActiveRoom() is B
-- given room A active / when setActiveRoom(A) / then A.close() not called
-- given room A active / when setActiveRoom(null) / then A.close() called, getActiveRoom() null
-  Boundaries: none (HostRoom is a plain object; use a hand-rolled fake).
+### GAP-029 - categoryprefs parseCustom (src/lib/categoryprefs.ts:23)
+- Why it matters: parses whatever localStorage holds; a bad entry would poison the setup screen on every launch.
+- Untested: the 50-entry cap (line 28) and a `customName` that is not a string (line 32).
+- Boundaries to fake: localStorage (stubStorage helper exists).
+- Points 6 (+3 uncovered lines, +1 importer, +1 external input, +1 branches > 5). Effort S. Measured. Phase D. open.
 
-### GAP-009 newId fallback - game.ts:14
+### GAP-027 - p2p lifecycle edges (src/lib/p2p.ts:360, :515, :560, :715)
+- Why it matters: seat reclaim and reconnect are the must-cover behaviours; the uncovered paths are exactly the "device came back / link died" moments.
+- Untested: reopenRoom broker timeout (372-375), a ping from a superseded connection refreshing a seat it no longer owns (563), a returning lobby device without an avatar keeping the old one (521), a connection error after a successful join reaching onClose (719).
+- Boundaries to fake: PeerJS fake, fake timers, localStorage (all in p2p.test-helpers).
+- Points 11 (as GAP-026). Effort M. Measured. Phase B. open.
 
-Why: used for every game and player id; the manual UUIDv4 path runs on plain-HTTP LAN play; branch uncovered.
-Plan: given crypto.randomUUID undefined / when newId() / then a v4-shaped UUID (version nibble 4, variant 8-b), and two calls differ.
-Boundaries: `crypto` global (vi.stubGlobal with getRandomValues from node:crypto).
+### GAP-023 - qrscan poll loop (src/lib/qrscan.ts:80-143)
+- Why it matters: the join-by-QR path; a regression here means kids type codes by hand. Named in the opening question.
+- Untested: everything after the camera opens - the 200 ms tick, native `BarcodeDetector` detection, stop + `ondetect` on the first payload, the decode-error branch, the not-ready and busy guards.
+- Boundaries to fake: navigator.mediaDevices (stubCamera exists), `BarcodeDetector` global, `HTMLMediaElement.HAVE_ENOUGH_DATA` global, fake timers, console.error.
+- Points 9 (+3 uncovered lines, +3 named, +1 importer, +1 external input, +1 length). Effort M. Measured. Phase E. open.
 
-### GAP-010 drawLetter / startNextRound defensive branches - game.ts:55,71
+### GAP-030 - sound.ts audio() resume (src/lib/sound.ts:27)
+- Untested: an AudioContext born `suspended` (autoplay policy) is resumed before the first chime (line 30).
+- Boundaries to fake: AudioContext (stubAudio exists; add a `state` override).
+- Points 4 (+3 uncovered line, +1 importers). Effort S. Measured. Phase E. open.
 
-Why: must-cover; branches at 59/88 uncovered.
-Plan:
+### GAP-022 - qrscan hasCamera + decodeWithCanvas (src/lib/qrscan.ts:25, :62)
+- Re-evaluated from needs-harness: a fake canvas object (`getContext` returning `drawImage` / `getImageData` stubs) and `vi.mock('jsqr')` are enough; no DOM env needed.
+- Untested: `hasCamera` on secure / insecure contexts; the jsQR fallback path through the canvas; a canvas without a 2d context; a video with zero dimensions.
+- Points 8 (+3, +3 named, +1 importer, +1 external input). Effort M. Measured. Phase E. open.
 
-- given every pack letter already used / when drawLetter / then still returns a letter from the pack
-- given a game with zero players / when startNextRound / then activePlayerId is null and the round is created
-- regression 25f020f: double-tap guard - already covered at game.test.ts:108/115 (cross-reference).
+### GAP-028 - validation edge paths (src/lib/validation.ts:92, :191, :258, :280, :339)
+- Untested: `checkWordWithin` resolving 'vote' on a rejecting check (107-108), `wordFact` with the network down (214), Wikidata entity-search HTTP error setting the one-minute cooldown (263 -> 320) and the cooldown short-circuit inside the queue (295-296), the queue surviving a failed run (325), a Wiktionary body without `query.pages` (366).
+- Boundaries to fake: fetch (stubFetch helpers exist), fake timers, `./db` mock.
+- Points 8 (+3 uncovered lines, +1 importers, +1 bug-fix commit 82cd032, +1 churn, +1 external input, +1 length). Effort M. Measured. Phase D. open.
 
-### GAP-001 createRoom + lobby - p2p.ts:234, 316
+### GAP-024 - turnstile failure paths (src/lib/turnstile.ts:34, :62)
+- Untested: a script load failure is forgotten so the next room retries (46-53), a widget that never answers times out to null after 10 s (73-74), `window.turnstile` missing after the script loaded (68 -> 93-94).
+- Boundaries to fake: document / window (stubDom, installTurnstile helpers exist), fake timers, import.meta.env (vi.stubEnv).
+- Points 7 (+3 uncovered lines, +3 named, +1 importer). Effort M. Measured. Phase D. open.
 
-Why: must-cover, 0 % covered, 3 importers via createRoom/reopenRoom, parses guest messages, >50 lines, churn.
-Untested: open resolves a room with the code; 'unavailable-id' retries with a fresh code up to 3 times; other errors and the 12 s timeout reject with Error('network'); hello seats a guest and replies welcome + roster; duplicate names get " 2"; malformed data ignored; lobby drop removes the seat; sendTo/broadcast reach only connected seats; answers from a seated guest reach onGuestMessage, answers before hello do not.
-Boundaries: `peerjs` (vi.mock with an EventEmitter-style fake Peer / DataConnection), timers (vi.useFakeTimers), `localStorage` (stubbed).
-
-### GAP-002 joinRoom - p2p.ts:537
-
-Untested: hello carries name + deviceId and avatar only when given; welcome resolves the session with playerId; busy before welcome rejects 'not-found'; peer-unavailable rejects 'not-found'; other peer error rejects 'network'; 12 s timeout rejects 'network'; malformed host data ignored; messages after welcome reach onMessage; conn close after welcome fires onClose; close() closes conn and destroys peer.
-Boundaries: peerjs, timers, localStorage.
-
-### GAP-003 host room after lock - p2p.ts:387-506
-
-Untested: lock() then a stranger's hello gets 'busy' and the conn is closed after 500 ms; a known name with an empty seat reclaims it; a known name with a LIVE seat gets busy (anti-kick rule); a returning deviceId reclaims even a live seat and the stale conn is closed; reclaim replays the roster and the last round with seconds reduced by elapsed time; scores replay wins over round; a drop after lock keeps the seat (conn null) and is invisible to the roster; close() broadcasts 'ended', destroys the peer after 500 ms and clears seats.
-Boundaries: peerjs, timers, Date.now (vi.setSystemTime).
-
-### GAP-005 updateGame - stores.ts:15
-
-Why: every game mutation flows through it; 6 importers; data mutation; regression ed9abc7 (structuredClone so `$derived` re-runs).
-Plan:
-
-- given a game in the store / when updateGame(mutate) / then the store holds a NEW object (not the same reference) with the mutation applied (regression ed9abc7)
-- given a game / when updateGame / then saveGame called once with the mutated state
-- given null / when updateGame / then mutate not called, saveGame not called, store stays null
-  Boundaries: `./db` saveGame (vi.mock - IndexedDB boundary).
-
-### GAP-008 reopenRoom - p2p.ts:275
-
-Untested: resolves a locked room with one empty seat per known player (guests() lists them, conn null); code is normalized; 'unavailable-id' retries after 2 s; final failure rejects 'network'.
-Boundaries: peerjs, timers.
-
-### GAP-006 fetchPeerOptions / getPeerOptions - p2p.ts:190
-
-Untested: valid iceServers body -> Peer constructed with config.iceServers; non-ok / malformed / thrown fetch -> {} and NOT cached (next room fetches again); success is cached (one fetch across two rooms).
-Boundaries: `fetch` (vi.stubGlobal), observed through the fake Peer constructor's options.
-
-### GAP-007 onRequestPost - functions/turn-credentials.ts:44
-
-Why: mints 24 h relay credentials on the account's quota; auth check; parses upstream JSON.
-Plan:
-
-- Sec-Fetch-Site: cross-site -> 403 forbidden, no fetch
-- no Sec-Fetch-Site, Origin matches request origin -> allowed; mismatching Origin -> 403
-- secrets missing -> 503 turn-not-configured, no fetch
-- upstream ok -> 200 with the body passed through, Authorization Bearer header, ttl 86400, Cache-Control no-store
-- upstream non-ok -> 502; fetch throws -> 502
-  Boundaries: `fetch` (vi.stubGlobal). Request/Response are native in Node 24.
-
-### GAP-013 inPublicDictionary - validation.ts:309 (Phase E + F)
-
-Plan:
-
-- pages with an id other than -1 and no `missing` -> 'known'; pages {-1: {missing}} -> 'unknown'
-- non-ok -> 'error'; fetch throws -> 'error'
-- regression 82cd032: two concurrent calls for the same word issue ONE fetch; an 'error' verdict is evicted so the next call fetches again; a 'known' verdict is cached
-- URL targets `<language>.wiktionary.org` with the lowercased word
-  Boundaries: fetch.
-
-### GAP-014 checkWord dictionary / hybrid paths - validation.ts:57-83
-
-Plan (fetch stubbed, wikidata disabled unless stated):
-
-- bundled hit -> 'valid' with no fetch (hybrid)
-- dictionary known -> 'valid'; unknown in 'dictionary' mode -> 'vote'; unknown in 'hybrid' -> 'vote'; error -> 'vote'
-- wikidata fit -> 'valid' without consulting Wiktionary; nofit -> 'vote' without Wiktionary; error -> falls through to Wiktionary
-- prefetchWordCheck never rejects
-  Boundaries: fetch, `./db` (mock so learnWord does not touch IndexedDB).
-
-### GAP-015 wordFact - validation.ts:161
-
-Plan: exact-match hit with a description -> that description; prefix-only match -> null; empty description -> null; non-ok -> null and not cached; result cached (second call no fetch).
-Boundaries: fetch.
-
-### GAP-011 ensureWords - words/index.ts:12
-
-Plan: unknown language resolves and getWords returns {} ; second call for a loaded language resolves without reloading.
-Boundaries: none (import.meta.glob resolved at build; only the 'no loader' path is reachable in tests).
-
-### GAP-012 i18n init - i18n/index.ts:36-76
-
-Plan (vi.resetModules + dynamic import per case):
-
-- saved language 'he' in storage -> uiLanguage 'he'
-- no saved, navigator.languages ['fr-CA','en'] -> 'fr'; ['xx'] -> 'en'
-- saved but unknown code -> falls to navigator
-- persistLanguage writes the storage key
-- applyDir sets documentElement.dir/lang from the pack (document stubbed)
-  Boundaries: localStorage, navigator, document.
-
-### GAP-016 / GAP-017 (beyond --top)
-
-inWikidataCategory: unmapped category 'error'; empty search -> 'nofit' cached; ASK true -> 'fit'; non-ok -> 'error' + 60 s cooldown short-circuits the next call; queue runs one at a time.
-learnWord: custom category ignored; 1-char ignored; dedupe; storage failure tolerated. forgetWord drops from cache and store.
-
-### GAP-018 db.ts - needs-harness
-
-IndexedDB with `idb`. No `fake-indexeddb` in the repo; a vi.mock of `idb` would test the mock. Recommend adding `fake-indexeddb` (dev) in a separate decision, then: save/load round-trip, listSaves ordering and summary shape, deleteGame, learned-word add/remove including entry deletion when empty, touchProfile upsert, recordGameResult only for saved profiles.
-
-### GAP-019 screens - needs-harness
-
-Round.svelte timer (tick sound under 10 s, time-up forces review), Join.svelte waiting/reconnect states, Scoreboard.svelte 10 s auto-continue and its stop button. Needs a DOM environment plus @testing-library/svelte, or a seam: move the countdown into a pure `src/lib/timer.ts`.
+### GAP-018 / GAP-019 / GAP-021 - harness-blocked
+- db.ts needs `fake-indexeddb`; the Svelte screens need a DOM environment plus a component-testing library; avatar.ts needs canvas + Image. None of these is in the repo and this command never adds a test library (rule 1). Each is one decision away: adding `fake-indexeddb` and `jsdom` as dev dependencies would unblock GAP-018 and GAP-019.
 
 ## 6. Suspected bugs
 
-- **BUG-001** (Medium) - `src/lib/p2p.ts:150` `isHostMessage` validates only the `type` string. A peer holding the room's id can send `{type:'welcome', playerId: {}}` or `{type:'round', categories: 'x'}` and the guest screen uses the fields as-is. Probably should validate each variant's shape like `isGuestMessage` does. Not tagged security: the guest only renders text and Svelte escapes it. Triage 2026-09-04: accepted, open for a separate fix.
-- **BUG-002** (Low) - `src/lib/p2p.ts:557` after a successful join `fail()` returns early on `settled`, so a peer-level error (broker lost) never reaches `onClose`; only connection-level close/error does. The guest may sit on a dead room until the host's conn closes. Triage 2026-09-04: accepted, open for a separate fix; the held-back GAP-002 case follows it.
+None new this run. Still open from 2026-09-04 (both accepted in triage, awaiting a separate fix):
 
-## 7. Top 5 quick wins
+- BUG-001 - src/lib/p2p.ts:194 - `isHostMessage` checks only that `type` is a known string; payload fields are used unvalidated on the guest device. Medium.
+- BUG-002 - src/lib/p2p.ts:656 - a peer-level 'error' after a successful join is swallowed, so onClose never fires. Low.
 
-1. GAP-004 setActiveRoom - 3 tests, no mocks.
-2. GAP-009 newId fallback - 1 test, stub `crypto`.
-3. GAP-005 updateGame clone + persist - 3 tests, mock `./db`.
-4. GAP-007 onRequestPost - 6 tests, stub `fetch`.
-5. GAP-013 inPublicDictionary dedupe (regression 82cd032) - 5 tests, stub `fetch`.
+## 7. Top quick wins (High or Critical, S effort, Measured, not blocked)
 
-## 8. Send to /cleanup, Checked fine, exclusions
+Only two gaps qualify:
 
-Send to /cleanup: none found (no dead exports in scope; `/cleanup` Phase 1 already removed them).
+1. GAP-026 - p2p guards (Critical, S)
+2. GAP-025 - turn-credentials token edge cases (High, S)
 
-Checked, found fine (skip while file unchanged):
+Next cheapest: GAP-029 (Medium, S), GAP-030 (Medium, S), GAP-027 (Critical, M).
 
-- src/lib/bot.ts @3415020, src/lib/categories.ts @390975f, src/lib/session.ts @3415020, src/lib/storage.ts @4fa4c3a, src/lib/theme.ts @3415020 - 100 % lines and branches.
-- src/lib/game.ts scoring/rounds/ids (game.test.ts, 24 tests) - only the nullish fallbacks listed in GAP-009/010 remain.
-- src/lib/p2p.ts isGuestMessage / isIceServerArray / makeRoomCode / normalizeRoomCode - covered incl. hostile payloads.
-- src/lib/qrscan.ts roomCodeFromScan / startQrScan permission error - covered.
+## 8. Send to /cleanup
 
-Exclusions: type-only declarations 1 file (types.ts); barrel re-exports 0; generated 0; vendored 0; data files 12 (6 packs, 6 word lists); bootstrap wiring 2 (main.ts, vite-env.d.ts); test helpers 1 (vitest.setup.ts); Svelte screens/components 19 files tagged excluded-from-coverage (Suspected).
+None found this run - no dead exports in scope.
+
+## 9. Checked, found fine (skip while the file is unchanged)
+
+| File | Last commit | Note |
+| --- | --- | --- |
+| src/lib/vote.ts | a5fa0d2 | 100 / 100; tally edge cases (half, ties, shrinking quorum, zero voters) all asserted |
+| src/lib/game.ts | dff71a6 | 100 % lines; the 9 uncovered branches are `?? 0` / `?? 'A'` fallbacks unreachable through the public API |
+| src/lib/stores.ts | 390975f | 100 / 100 |
+| src/lib/storage.ts | 4fa4c3a | 100 / 100 |
+| src/lib/session.ts | 3415020 | 100 / 100 |
+| src/lib/theme.ts | 3415020 | 100 / 100 |
+| src/lib/bot.ts | 3415020 | 100 / 100 |
+| src/lib/categories.ts | 390975f | 100 / 100 |
+| src/lib/i18n/index.ts | 3415020 | registerPack is a one-line setter (excluded as trivial); line 40 `?? ''` unreachable |
+| src/lib/words/index.ts | 390975f | failed-chunk branch is needs-seam (GAP-011) |
+
+Exclusions: type-only 1 (`src/lib/types.ts`), bootstrap 1 (`src/main.ts`), language packs 6, word lists 6 JSON, test helpers 1, trivial setter 1, `.svelte` UI components without logic 10 (`src/lib/ui/*`), `qa/` and `design/` per TESTING.md. Excluded by CLEANUP.md: 0 (no file).
