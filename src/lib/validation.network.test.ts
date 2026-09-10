@@ -94,6 +94,13 @@ describe('inPublicDictionary (Wiktionary)', () => {
     expect(failing).toHaveBeenCalledTimes(1);
     expect(working).toHaveBeenCalledTimes(1);
   });
+
+  it('reads an answer without any pages as unknown', async () => {
+    stubFetch({ 'wiktionary.org': () => Response.json({}) });
+    await expect(inPublicDictionary('grombler', 'en')).resolves.toBe('unknown');
+    stubFetch({ 'wiktionary.org': () => Response.json({ query: {} }) });
+    await expect(inPublicDictionary('hobnocker', 'en')).resolves.toBe('unknown');
+  });
 });
 
 describe('checkWord with lookups', () => {
@@ -208,5 +215,13 @@ describe('wordFact', () => {
     await expect(wordFact('RHEA', 'en')).resolves.toBe('bird');
     expect(failing).toHaveBeenCalledTimes(1);
     expect(working).toHaveBeenCalledTimes(1);
+  });
+
+  it('has nothing to say while offline, and does not remember that either', async () => {
+    const offline = stubFetch({});
+    await expect(wordFact('saola', 'en')).resolves.toBeNull();
+    stubFetch({ wbsearchentities: search([{ text: 'saola', description: 'rare forest bovine' }]) });
+    await expect(wordFact('saola', 'en')).resolves.toBe('rare forest bovine');
+    expect(offline).toHaveBeenCalledTimes(1);
   });
 });

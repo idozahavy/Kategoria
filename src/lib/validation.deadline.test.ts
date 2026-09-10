@@ -59,6 +59,12 @@ describe('checkWordWithin (the review screen never waits past the deadline)', ()
     await expect(checkWordWithin('apple', opts({ mode: 'none' }))).resolves.toBe('valid');
   });
 
+  it('never throws: a check that blows up is sent to the group', async () => {
+    const pending = checkWordWithin(undefined as unknown as string, opts());
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(pending).resolves.toBe('vote');
+  });
+
   it('honours a custom deadline', async () => {
     vi.stubGlobal('fetch', () => new Promise<Response>(() => undefined));
     let settled: string | null = null;

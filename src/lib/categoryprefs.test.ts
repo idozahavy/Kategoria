@@ -88,4 +88,24 @@ describe('category prefs', () => {
       writeCategoryPrefs({ selectedIds: ['animal'], custom: [] });
     }).not.toThrow();
   });
+
+  it('keeps at most 50 custom categories and drops one whose name is not text', () => {
+    stubStorage({
+      [KEY]: JSON.stringify({
+        selectedIds: ['animal'],
+        custom: [
+          { id: 'c-num', customName: 7 },
+          ...Array.from({ length: 51 }, (_, i) => ({
+            id: `c-${String(i)}`,
+            customName: `Set ${String(i)}`,
+          })),
+        ],
+      }),
+    });
+    const custom = readCategoryPrefs(BUILTIN)?.custom ?? [];
+    expect(custom).toHaveLength(50);
+    expect(custom.map((c) => c.id)).not.toContain('c-num');
+    expect(custom[0]).toEqual({ id: 'c-0', customName: 'Set 0' });
+    expect(custom[49]).toEqual({ id: 'c-49', customName: 'Set 49' });
+  });
 });

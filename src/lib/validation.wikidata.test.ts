@@ -135,4 +135,40 @@ describe('inWikidataCategory', () => {
     expect(maxInFlight).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(6);
   });
+
+  it('a failing entity search starts the cooldown too, without asking the graph', async () => {
+    const failing = stubFetch({
+      wbsearchentities: () =>
+        Response.json({ search: [{ id: 'Q1', match: { text: 'saola' } }] }, { status: 500 }),
+      sparql: ask(true),
+    });
+    const { inWikidataCategory } = await loadValidation();
+    await expect(inWikidataCategory('saola', 'animal', 'en')).resolves.toBe('error');
+    expect(failing.mock.calls.some(([url]) => url.includes('sparql'))).toBe(false);
+
+    const during = stubFetch({ wbsearchentities: search('emu'), sparql: ask(true) });
+    vi.advanceTimersByTime(59_000);
+    await expect(inWikidataCategory('emu', 'animal', 'en')).resolves.toBe('error');
+    expect(during).not.toHaveBeenCalled();
+  });
+
+  it('a queued check reuses a verdict that landed meanwhile, or gives up once Wikidata is down', async () => {
+    const fetchMock = stubFetch({ wbsearchentities: search('okapi'), sparql: ask(true) });
+    const { inWikidataCategory } = await loadValidation();
+    const twice = await Promise.all([
+      inWikidataCategory('okapi', 'animal', 'en'),
+      inWikidataCategory('Okapi', 'animal', 'en'),
+    ]);
+    expect(twice).toEqual(['fit', 'fit']);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // one search and one ask, not two of each
+
+    const down = stubFetch({ wbsearchentities: () => new Response('', { status: 503 }) });
+    const fresh = await loadValidation();
+    const behind = await Promise.all([
+      fresh.inWikidataCategory('rhea', 'animal', 'en'),
+      fresh.inWikidataCategory('emu', 'animal', 'en'),
+    ]);
+    expect(behind).toEqual(['error', 'error']);
+    expect(down).toHaveBeenCalledTimes(1); // emu was queued behind the failure and never fetched
+  });
 });
