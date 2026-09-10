@@ -331,4 +331,32 @@ describe('reopenRoom', () => {
     await expect(pending).rejects.toThrow('network');
     expect(FakePeer.last().destroyed).toBe(true);
   });
+
+  it('rejects with a network error when the broker never answers within 12 s', async () => {
+    const pending = reopenRoom('ABCD', players);
+    await flush();
+    const peer = FakePeer.last();
+    vi.advanceTimersByTime(11_999);
+    expect(peer.destroyed).toBe(false);
+    vi.advanceTimersByTime(1);
+    await expect(pending).rejects.toThrow('network');
+    expect(peer.destroyed).toBe(true);
+  });
+});
+
+describe('superseded connections', () => {
+  it('a ping from the stale connection of a reclaimed seat does not count as liveness', async () => {
+    const { room, peer } = await openRoom();
+    const ida = connectAndHello(peer, 'Ida', { deviceId: 'dev-1' });
+    room.lock();
+    const back = connectAndHello(peer, 'Ida', { deviceId: 'dev-1' });
+    expect(back.playerId).toBe(ida.playerId);
+
+    vi.advanceTimersByTime(STALE_AFTER_MS + 1);
+    expect(room.connectedIds()).toEqual([]);
+    ida.conn.emit('data', { type: 'ping' }); // the zombie tab is still talking
+    expect(room.connectedIds()).toEqual([]);
+    back.conn.emit('data', { type: 'ping' });
+    expect(room.connectedIds()).toEqual([ida.playerId]);
+  });
 });

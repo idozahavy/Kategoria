@@ -97,6 +97,13 @@ describe('joinRoom handshake', () => {
     await expect(pending).rejects.toThrow('network');
   });
 
+  it('a connection error before welcome fails as network and frees the peer', async () => {
+    const { pending, peer, conn } = await connect();
+    conn.emit('error', new Error('ice failed'));
+    await expect(pending).rejects.toThrow('network');
+    expect(peer.destroyed).toBe(true);
+  });
+
   it('gives up as network when no welcome arrives within 12 s', async () => {
     const { pending, peer } = await connect();
     vi.advanceTimersByTime(12_000);

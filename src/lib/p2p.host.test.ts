@@ -234,6 +234,45 @@ describe('TURN lookup failures (never remembered)', () => {
     vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
     expect((await openRoom()).peer.options).toEqual({});
   });
+
+  it('treats a body that is not an object (array, null, string) as no TURN', async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(Response.json([{ urls: 'stun:x' }])));
+    expect((await openRoom()).peer.options).toEqual({});
+    vi.stubGlobal('fetch', () => Promise.resolve(Response.json(null)));
+    expect((await openRoom()).peer.options).toEqual({});
+    vi.stubGlobal('fetch', () => Promise.resolve(Response.json('stun:x')));
+    expect((await openRoom()).peer.options).toEqual({});
+  });
+});
+
+describe('host room lobby: returning device', () => {
+  it('keeps the avatar a device chose earlier when its new hello carries none', async () => {
+    const { room, peer } = await openRoom();
+    const ida = seatGuest(peer, 'Ida', { deviceId: 'dev-1', avatar: '🦋' });
+    const back = seatGuest(peer, 'Ida', { deviceId: 'dev-1' });
+    expect(back.playerId).toBe(ida.playerId);
+    expect(room.guests()).toEqual([
+      { playerId: ida.playerId, name: 'Ida', avatar: '🦋', deviceId: 'dev-1' },
+    ]);
+
+    const changed = seatGuest(peer, 'Ida', { deviceId: 'dev-1', avatar: '🐸' });
+    expect(changed.playerId).toBe(ida.playerId);
+    expect(room.guests().map((g) => g.avatar)).toEqual(['🐸']);
+  });
+
+  it('ignores a connection that leaves without ever saying hello', async () => {
+    const { room, peer } = await openRoom();
+    const onGuests = vi.fn();
+    room.onGuestsChange(onGuests);
+    seatGuest(peer, 'Ida');
+    expect(onGuests).toHaveBeenCalledTimes(1);
+
+    const stranger = new FakeConn();
+    peer.emit('connection', stranger);
+    stranger.emit('close');
+    expect(onGuests).toHaveBeenCalledTimes(1);
+    expect(room.guests().map((g) => g.name)).toEqual(['Ida']);
+  });
 });
 
 describe('active room singleton', () => {

@@ -67,6 +67,13 @@ describe('isGuestMessage (untrusted P2P input)', () => {
     expect(isGuestMessage({ type: 'answers', roundIndex: 0, answers: null })).toBe(false);
     expect(isGuestMessage({ type: 'nonsense' })).toBe(false);
   });
+
+  it('caps the avatar payload at 400 000 chars and refuses a non-string one', () => {
+    const image = (length: number): string => 'data:image/webp;base64,'.padEnd(length, 'A');
+    expect(isGuestMessage({ type: 'hello', name: 'Ida', avatar: image(400_000) })).toBe(true);
+    expect(isGuestMessage({ type: 'hello', name: 'Ida', avatar: image(400_001) })).toBe(false);
+    expect(isGuestMessage({ type: 'hello', name: 'Ida', avatar: 42 })).toBe(false);
+  });
 });
 
 describe('isIceServerArray (/turn-credentials response)', () => {
@@ -92,5 +99,11 @@ describe('isIceServerArray (/turn-credentials response)', () => {
     expect(isIceServerArray([{ urls: [] }])).toBe(false);
     expect(isIceServerArray([{ urls: [42] }])).toBe(false);
     expect(isIceServerArray([{ urls: 'turn:x', username: 42 }])).toBe(false);
+  });
+
+  it('rejects a list whose entries are not objects, even next to a good one', () => {
+    expect(isIceServerArray([null])).toBe(false);
+    expect(isIceServerArray(['stun:stun.cloudflare.com:3478'])).toBe(false);
+    expect(isIceServerArray([{ urls: 'stun:stun.cloudflare.com:3478' }, null])).toBe(false);
   });
 });

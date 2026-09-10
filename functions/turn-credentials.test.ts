@@ -182,4 +182,37 @@ describe('POST /turn-credentials with Turnstile configured', () => {
     expect(thrown.status).toBe(502);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('treats a JSON body that is not an object as carrying no token', async () => {
+    const fetchMock = stubUpstream(() => Promise.resolve(Response.json({ success: true })));
+    const asString = await onRequestPost({ request: request(forged, 'tok-1'), env: guarded });
+    const asArray = await onRequestPost({ request: request(forged, ['tok-1']), env: guarded });
+    for (const res of [asString, asArray]) {
+      expect(res.status).toBe(403);
+      await expect(res.json()).resolves.toEqual({ error: 'turnstile-required' });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves remoteip out of the verification when the caller IP is unknown', async () => {
+    const fetchMock = stubVerifyThenMint(() => Promise.resolve(Response.json({ success: true })));
+    const res = await onRequestPost({
+      request: request({ 'Sec-Fetch-Site': 'same-origin' }, { turnstileToken: 'tok-2' }),
+      env: guarded,
+    });
+    expect(res.status).toBe(200);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ secret: 'ts-secret', response: 'tok-2' });
+  });
+
+  it('reads a siteverify answer without a success flag as a failed check', async () => {
+    const noFlag = stubVerifyThenMint(() => Promise.resolve(Response.json({})));
+    const res = await onRequestPost({
+      request: request(forged, { turnstileToken: 'tok-3' }),
+      env: guarded,
+    });
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({ error: 'turnstile-failed' });
+    expect(noFlag).toHaveBeenCalledTimes(1);
+  });
 });
