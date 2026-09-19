@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import { trackEvent } from '../lib/analytics';
   import { AVATAR_EMOJI, fileToAvatar } from '../lib/avatar';
   import { BOT_AVATAR } from '../lib/bot';
   import { CATEGORY_EMOJI } from '../lib/categories';
@@ -373,6 +374,17 @@
     startNextRound(state);
     void saveGame(state);
     game.set(state);
+    trackEvent('game_start', {
+      players: finalPlayers.length,
+      bots: finalPlayers.filter((p) => p.isBot === true).length,
+      language: gameLanguage,
+      mode,
+      remote: isRemote,
+      // 0 = endless / no timer; keep every field one type so the dashboard aggregates.
+      rounds: isEndless ? 0 : roundCount,
+      endless: isEndless,
+      timer: timerSeconds ?? 0,
+    });
     screen.set('round');
   }
 </script>

@@ -1,6 +1,7 @@
 import type Peer from 'peerjs';
 import type { DataConnection, PeerJSOption } from 'peerjs';
 
+import { trackEvent } from './analytics';
 import { newId } from './game';
 import { readStorage, writeStorage } from './storage';
 import { getTurnstileToken } from './turnstile';
@@ -334,6 +335,7 @@ export async function createRoom(attempts = 3): Promise<HostRoom> {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      trackEvent('room_create');
       resolve(buildHostRoom(code, peer));
     });
 
@@ -687,6 +689,7 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
         if (!settled && data.type === 'welcome') {
           settled = true;
           clearTimeout(timeout);
+          trackEvent('room_join');
           resolve({
             playerId: data.playerId,
             send: (msg) => {

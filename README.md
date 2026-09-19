@@ -57,6 +57,17 @@ Each credential is a pass to relay arbitrary traffic through the account's TURN 
 
 Without the secrets — and in local dev, where the endpoint doesn't exist — the app silently falls back to STUN-only, and same-network play works exactly as before. Security headers for the deployed site live in [public/_headers](public/_headers).
 
+## Analytics (Umami Cloud)
+
+Anonymous, cookie-free counts of visitors, screens and games played — no consent banner needed. Every screen is reported as a page view (`/`, `/round`, `/review`, …) and the app sends six events: `game_start` (players, bots, language, mode, remote, rounds, endless, timer — `0` means endless / no timer), `round_end` (round), `game_finish` (roundsPlayed, players, remote), `game_resume` (remote), `room_create` and `room_join`. Never names, words or ids. The tracker only loads in production builds that carry a website id, so `npm run dev` and CI never count. One-time setup:
+
+1. Sign up at https://cloud.umami.is (free Hobby plan: 100k events/month, 3 websites, 6 months of history).
+2. **Settings → Websites → Add website**: name `Kategoria`, domain `kategoria.pages.dev`. Copy the **Website ID**.
+3. Put it in `.env.local` (gitignored) on the machine that deploys: `VITE_UMAMI_WEBSITE_ID=<uuid>` (see `.env.example`).
+4. `npm run deploy`. To check before deploying, `npm run build && npm run preview` — the preview build is a production build, so it reports to the dashboard.
+
+The Umami dashboard → **Visitors** is the unique-users number; **Events** shows how many games start and finish.
+
 ## Design system
 
 The full design scheme (tokens, components, rules, style guide) lives in [design/](design/) — see [design/scheme.md](design/scheme.md). UI work must follow the `design-system` skill in `.claude/skills/design-system/`.

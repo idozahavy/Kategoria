@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import { trackEvent } from '../lib/analytics';
   import { deleteGame, listSaves, loadGame } from '../lib/db';
   import { screenForGame } from '../lib/game';
   import { t } from '../lib/i18n';
@@ -33,6 +34,7 @@
   async function continueGame(id: string): Promise<void> {
     const loaded = await loadGame(id);
     if (!loaded) return;
+    trackEvent('game_resume', { remote: loaded.settings.isRemote === true });
     if (loaded.settings.isRemote === true && loaded.settings.roomCode !== undefined) {
       // Reopen the room under its old code so guests can rejoin their seats.
       try {

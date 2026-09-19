@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
 
+  import { trackEvent } from '../lib/analytics';
   import { categoryEmoji } from '../lib/categories';
   import { isFinished, newId, scoreRound, startNextRound, totalScores } from '../lib/game';
   import { categoryName, t } from '../lib/i18n';
@@ -297,6 +298,7 @@
     <div class="results">
       {#each round.categoryIds as catId (catId)}
         {@const cat = categoryFor(catId)}
+    trackEvent('round_end', { round: ($game?.currentRound ?? 0) + 1 });
         <Card>
           <div class="cat-header">
             <span class="cat-emoji">{categoryEmoji(cat ?? catId)}</span>
@@ -304,6 +306,16 @@
           </div>
           <ul class="answer-list">
             {#each $game.players as p (p.id)}
+    if (advancing) return;
+    advancing = true;
+    const roundsPlayed = ($game?.currentRound ?? 0) + 1;
+    // The last round ends here, not in `next()` — report it before the game.
+    trackEvent('round_end', { round: roundsPlayed });
+    trackEvent('game_finish', {
+      roundsPlayed,
+      players: players.length,
+      remote: isRemote,
+    });
               {@const entry = round.answers.find(
                 (a) => a.playerId === p.id && a.categoryId === catId,
               )}

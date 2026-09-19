@@ -1,6 +1,6 @@
 # Code Scheme — Kategoria
 
-**Version 1.5.0** · 2026-09-02 · Enforced by Prettier + ESLint (`npm run format` / `npm run lint`) and the `code-conventions` skill.
+**Version 1.6.0** · 2026-09-10 · Enforced by Prettier + ESLint (`npm run format` / `npm run lint`) and the `code-conventions` skill.
 
 ## Formatting (Prettier — do not hand-format)
 
@@ -26,7 +26,7 @@
 - Every mutation of a running game goes through `updateGame()` (it persists to IndexedDB and returns a deep clone so `$derived` chains re-evaluate — same-reference mutation gets memoized away). Never mutate `$game` directly.
 - `GameState` must hold only plain data: copy anything sourced from `$state` (e.g. `.map((x) => ({ ...x }))`) before putting it into a game — `$state` proxies throw `DataCloneError` in `structuredClone` and IndexedDB.
 - Pure functions in `game.ts` take state explicitly; no store access outside components/`stores.ts`.
-- No network calls except `validation.ts` (public dictionary) and `p2p.ts` (WebRTC signaling via PeerJS); every network operation has a timeout and degrades gracefully (never throws raw errors to the UI). `functions/` is server-side (Cloudflare Pages Functions) and is exempt — it runs outside the client bundle, not under this client-side rule.
+- No network calls except `validation.ts` (public dictionary), `p2p.ts` (WebRTC signaling via PeerJS), `turnstile.ts` (bot-check script) and `analytics.ts` (Umami tracker script); every network operation has a timeout and degrades gracefully (never throws raw errors to the UI). Analytics: report through `trackScreen`/`trackEvent` only, with plain-value data and no names, words or ids of players. `functions/` is server-side (Cloudflare Pages Functions) and is exempt — it runs outside the client bundle, not under this client-side rule.
 - P2P: the host screen is authoritative; guests render what the host sends. All messages received over a DataConnection are untrusted — validate with the type guards in `p2p.ts` before use. The live room lives only in `p2p.ts`'s `activeRoom` singleton, never inside `GameState`.
 
 ## UI text & styling
@@ -54,6 +54,7 @@ Prefix by area: `feat:`, `fix:`, `chore:`, `design:` / `design-approve:` / `desi
 
 ## Changelog
 
+- 1.6.0 (2026-09-10) — `analytics.ts` (Umami Cloud) joins the network-allowed modules (and `turnstile.ts`, which already loaded the bot-check script, is now listed too); events go through `trackEvent`, screens through `trackScreen`; never player data.
 - 1.5.0 (2026-09-02) — `functions/turn-credentials.ts` Pages Function mints TURN credentials (server-side, exempt from the client no-network rule); wrangler pinned (`wrangler@4`); CI workflow (`.github/workflows/ci.yml`) runs all six verify gates plus build.
 - 1.4.0 (2026-08-31) — vitest unit-test gate (`npm test`); colocated `*.test.ts`; predicate-named persisted booleans (user-approved, old saves orphaned).
 - 1.3.0 (2026-08-31) — import auto-sorting via eslint-plugin-simple-import-sort (user-approved).
