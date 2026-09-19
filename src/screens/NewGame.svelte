@@ -434,6 +434,7 @@
               <button
                 type="button"
                 class="avatar-btn"
+                class:is-empty={player.avatar === undefined}
                 aria-label={$t('setup.avatar')}
                 onclick={() => (avatarPickerFor = player.id)}
               >
@@ -570,7 +571,9 @@
             if (e.key === 'Enter') addCustomCategory();
           }}
         />
-        <Button variant="secondary" onclick={addCustomCategory}>{$t('setup.addCategory')}</Button>
+        <Button variant="secondary" onclick={addCustomCategory}>
+          {$t('setup.addCategory.action')}
+        </Button>
       </div>
     {:else}
       {#if playStyle === 'remote'}
@@ -789,6 +792,19 @@
     justify-content: center;
     cursor: pointer;
     border-radius: var(--radius-pill);
+    position: relative;
+  }
+  .avatar-btn.is-empty::after {
+    content: '✏️';
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    font-size: var(--font-size-small);
+    line-height: 1;
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-pill);
+    padding: var(--space-1);
   }
   .player-remove {
     min-inline-size: 48px;
@@ -913,11 +929,13 @@
   }
   .add-category {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: var(--space-2);
   }
   .add-category :global(.field) {
-    flex: 1;
+    flex: 1 1 12rem;
+    min-inline-size: 12rem;
   }
   .stepper {
     display: flex;

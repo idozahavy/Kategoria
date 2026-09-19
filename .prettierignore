@@ -4,3 +4,5 @@ design/
 package-lock.json
 coverage/
 .wrangler/
+# Immutable review evidence written by external review tooling.
+.visual-review/

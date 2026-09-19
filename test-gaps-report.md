@@ -5,16 +5,16 @@ HTML version: `test-gaps-report.html` (gitignored).
 
 ## Result
 
-| Metric | Before (660072b) | After (0e5c3e4) |
-| --- | --- | --- |
-| tests | 203 | 231 (+28) |
-| line_pct | 86.18 | 91.11 |
-| branch_pct_lit (files with >= 1 covered line) | 84.1 | 90.8 |
-| dark_files | 1 (avatar.ts) | 1 (avatar.ts) |
-| functions_unexecuted | 34 | 25 |
-| mutation_score | not measured | not measured (no tool configured) |
-| suite wall time (median of 3) | 2325 ms | 2522 ms (+8.5 %, under the 10 % threshold) |
-| red-proven | - | 28 / 28 |
+| Metric                                        | Before (660072b) | After (0e5c3e4)                            |
+| --------------------------------------------- | ---------------- | ------------------------------------------ |
+| tests                                         | 203              | 231 (+28)                                  |
+| line_pct                                      | 86.18            | 91.11                                      |
+| branch_pct_lit (files with >= 1 covered line) | 84.1             | 90.8                                       |
+| dark_files                                    | 1 (avatar.ts)    | 1 (avatar.ts)                              |
+| functions_unexecuted                          | 34               | 25                                         |
+| mutation_score                                | not measured     | not measured (no tool configured)          |
+| suite wall time (median of 3)                 | 2325 ms          | 2522 ms (+8.5 %, under the 10 % threshold) |
+| red-proven                                    | -                | 28 / 28                                    |
 
 Gaps closed per phase: B 3 (GAP-026, GAP-027, GAP-025), D 3 (GAP-029, GAP-028, GAP-024), E 3 (GAP-023, GAP-022, GAP-030). Phase A had nothing to repair; Phase F had no writable regression (d66dc0a touches only NewGame.svelte); Phase G has no end-to-end harness.
 
@@ -42,14 +42,14 @@ No `docs/project/CONVENTIONS.md` - `TESTING.md` is the only policy file. No `/cl
 
 ## 3. Tooling
 
-| Tool | Status |
-| --- | --- |
-| vitest 4.1.11 | found (repo devDependency) |
-| @vitest/coverage-v8 4.1.11 | found (repo devDependency) |
-| svelte-check 4 | found |
-| mutation tool | none configured - not installed |
+| Tool                                           | Status                                    |
+| ---------------------------------------------- | ----------------------------------------- |
+| vitest 4.1.11                                  | found (repo devDependency)                |
+| @vitest/coverage-v8 4.1.11                     | found (repo devDependency)                |
+| svelte-check 4                                 | found                                     |
+| mutation tool                                  | none configured - not installed           |
 | DOM env (jsdom / happy-dom / @testing-library) | not installed - Svelte screens untestable |
-| fake-indexeddb | not installed - db.ts untestable |
+| fake-indexeddb                                 | not installed - db.ts untestable          |
 
 Excluded from coverage (vitest.config.ts): `**/*.test.ts`, `**/*.test-helpers.ts`, `src/vite-env.d.ts`, `src/main.ts`, `src/lib/i18n/{ar,en,es,fr,he,ru}.ts`, `src/lib/words/*.json`. `.svelte` files are outside the `include` list, so screens carry no coverage number (Suspected only).
 
@@ -97,19 +97,19 @@ None found this run.
 
 ## 8. Checked, found fine (skip while the file is unchanged)
 
-| File | Last commit | Note |
-| --- | --- | --- |
-| src/lib/vote.ts | a5fa0d2 | 100 / 100; tally edge cases (half, ties, shrinking quorum, zero voters) all asserted |
-| src/lib/game.ts | dff71a6 | 100 % lines; the 9 uncovered branches are `?? 0` / `?? 'A'` fallbacks unreachable through the public API |
-| src/lib/p2p.ts | d2be4f6 | 100 % lines; remaining uncovered branches are double-fire guards (`if (settled) return`) |
-| src/lib/stores.ts | 390975f | 100 / 100 |
-| src/lib/storage.ts | 4fa4c3a | 100 / 100 |
-| src/lib/session.ts | 3415020 | 100 / 100 |
-| src/lib/theme.ts | 3415020 | 100 / 100 |
-| src/lib/bot.ts | 3415020 | 100 / 100 |
-| src/lib/categories.ts | 390975f | 100 / 100 |
-| src/lib/i18n/index.ts | 3415020 | registerPack is a one-line setter (excluded as trivial); line 40 `?? ''` unreachable |
-| src/lib/words/index.ts | 390975f | failed-chunk branch is needs-seam (GAP-011) |
+| File                   | Last commit | Note                                                                                                     |
+| ---------------------- | ----------- | -------------------------------------------------------------------------------------------------------- |
+| src/lib/vote.ts        | a5fa0d2     | 100 / 100; tally edge cases (half, ties, shrinking quorum, zero voters) all asserted                     |
+| src/lib/game.ts        | dff71a6     | 100 % lines; the 9 uncovered branches are `?? 0` / `?? 'A'` fallbacks unreachable through the public API |
+| src/lib/p2p.ts         | d2be4f6     | 100 % lines; remaining uncovered branches are double-fire guards (`if (settled) return`)                 |
+| src/lib/stores.ts      | 390975f     | 100 / 100                                                                                                |
+| src/lib/storage.ts     | 4fa4c3a     | 100 / 100                                                                                                |
+| src/lib/session.ts     | 3415020     | 100 / 100                                                                                                |
+| src/lib/theme.ts       | 3415020     | 100 / 100                                                                                                |
+| src/lib/bot.ts         | 3415020     | 100 / 100                                                                                                |
+| src/lib/categories.ts  | 390975f     | 100 / 100                                                                                                |
+| src/lib/i18n/index.ts  | 3415020     | registerPack is a one-line setter (excluded as trivial); line 40 `?? ''` unreachable                     |
+| src/lib/words/index.ts | 390975f     | failed-chunk branch is needs-seam (GAP-011)                                                              |
 
 Exclusions: type-only 1 (`src/lib/types.ts`), bootstrap 1 (`src/main.ts`), language packs 6, word lists 6 JSON, test helpers 1, trivial setter 1, `.svelte` UI components without logic 10 (`src/lib/ui/*`), `qa/` and `design/` per TESTING.md. Excluded by CLEANUP.md: 0 (no file).
 

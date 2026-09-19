@@ -3,12 +3,19 @@
 
   import { trackEvent } from '../lib/analytics';
   import { categoryEmoji } from '../lib/categories';
-  import { isFinished, newId, scoreRound, startNextRound, totalScores } from '../lib/game';
+  import {
+    isFinished,
+    newId,
+    normalizeWord,
+    scoreRound,
+    startNextRound,
+    totalScores,
+  } from '../lib/game';
   import { categoryName, t } from '../lib/i18n';
   import { getActiveRoom, type GuestMessage, type ResultCategory } from '../lib/p2p';
   import { playDing } from '../lib/sound';
   import { game, screen, updateGame } from '../lib/stores';
-  import type { AnswerEntry, GameState, RoundState } from '../lib/types';
+  import type { GameState, RoundState } from '../lib/types';
   import Button from '../lib/ui/Button.svelte';
   import Card from '../lib/ui/Card.svelte';
   import Modal from '../lib/ui/Modal.svelte';
@@ -30,9 +37,19 @@
   /** Remote games can hand each vote to the players' phones instead of the shared screen. */
   const votesOnDevices = $derived(isRemote && $game?.settings.voteMode === 'devices');
 
+  /**
+   * One decision per normalized (word, category): scoring compares normalized
+   * words across the whole category and `learnWord` is stored the same way, so
+   * asking once and applying to every player who wrote it keeps them in step.
+   */
+  type VoteItem = { word: string; categoryId: string; owners: string[] };
+
   let checking = $state(true);
-  let voteQueue = $state<AnswerEntry[]>([]);
-  let currentVote = $state<AnswerEntry | null>(null);
+  let voteQueue = $state<VoteItem[]>([]);
+  let currentVote = $state<VoteItem | null>(null);
+  /** How many words the group was asked about this round (for the progress line). */
+  let voteTotal = $state(0);
+  const voteIndex = $derived(voteTotal - voteQueue.length + 1);
   let scored = $state(false);
   let advancing = $state(false);
   let fact = $state<{ word: string; text: string } | null>(null);
@@ -74,13 +91,27 @@
     });
   }
 
+  /** One rejection settles the word for everyone who wrote it — a single save. */
+  function markInvalidAll(playerIds: string[], categoryId: string) {
+    updateGame((g) => {
+      const r = g.rounds[g.currentRound];
+      if (!r) return;
+      for (const entry of r.answers) {
+        if (entry.categoryId === categoryId && playerIds.includes(entry.playerId)) {
+          entry.status = 'invalid';
+        }
+      }
+    });
+  }
+
   onMount(async () => {
     const g = $game;
     if (!g) return;
     const r = g.rounds[g.currentRound];
     if (!r) return;
     const pending = r.answers.filter((a) => a.status === 'pending' && a.word !== '');
-    const votes: AnswerEntry[] = [];
+    // Grouped by (category, normalized word) so the same word is asked about once.
+    const votes = new Map<string, VoteItem>();
     // All words at once, each under the same short deadline — checks are
     // independent and usually cache-warm (prefetched as words were submitted).
     // A word still undecided when the deadline passes goes to the group.
@@ -101,12 +132,18 @@
       if (verdict === 'invalid') {
         markInvalid(a.playerId, a.categoryId);
       } else if (verdict === 'vote') {
-        if (humanCount > 1) votes.push(a);
+        if (humanCount > 1) {
+          const key = `${a.categoryId}|${normalizeWord(a.word)}`;
+          const item = votes.get(key);
+          if (item) item.owners.push(a.playerId);
+          else votes.set(key, { word: a.word, categoryId: a.categoryId, owners: [a.playerId] });
+        }
         // solo: auto-accept, stays pending until scored
       }
     });
     checking = false;
-    voteQueue = votes;
+    voteQueue = [...votes.values()];
+    voteTotal = voteQueue.length;
     advanceVote();
   });
 
@@ -192,7 +229,7 @@
       const lang = $game?.settings.language;
       if (lang) void learnWord(lang, a.categoryId, a.word);
     } else {
-      markInvalid(a.playerId, a.categoryId);
+      markInvalidAll(a.owners, a.categoryId);
     }
     voteQueue = voteQueue.slice(1);
     advanceVote();
@@ -254,13 +291,14 @@
       .filter((a) => a.status === 'valid' && a.word !== '')
       .sort((a, b) => b.word.length - a.word.length)[0];
     if (!best) return;
-    const text = await wordFact(best.word, g.settings.language);
+    const text = await wordFact(best.word, g.settings.language, best.categoryId);
     if (text !== null) fact = { word: best.word, text };
   }
 
   function next() {
     if (advancing) return;
     advancing = true;
+    trackEvent('round_end', { round: ($game?.currentRound ?? 0) + 1 });
     updateGame((g) => {
       startNextRound(g);
     });
@@ -268,6 +306,16 @@
   }
 
   function finish() {
+    if (advancing) return;
+    advancing = true;
+    const roundsPlayed = ($game?.currentRound ?? 0) + 1;
+    // The last round ends here, not in `next()` — report it before the game.
+    trackEvent('round_end', { round: roundsPlayed });
+    trackEvent('game_finish', {
+      roundsPlayed,
+      players: players.length,
+      remote: isRemote,
+    });
     screen.set('scoreboard');
   }
 
@@ -285,6 +333,12 @@
       .replace('{n}', String(ballotCount))
       .replace('{total}', String(voterCount)),
   );
+
+  const voteProgressText = $derived(
+    $t('review.vote.progress')
+      .replace('{n}', String(voteIndex))
+      .replace('{total}', String(voteTotal)),
+  );
 </script>
 
 {#if round && $game}
@@ -298,7 +352,6 @@
     <div class="results">
       {#each round.categoryIds as catId (catId)}
         {@const cat = categoryFor(catId)}
-    trackEvent('round_end', { round: ($game?.currentRound ?? 0) + 1 });
         <Card>
           <div class="cat-header">
             <span class="cat-emoji">{categoryEmoji(cat ?? catId)}</span>
@@ -306,16 +359,6 @@
           </div>
           <ul class="answer-list">
             {#each $game.players as p (p.id)}
-    if (advancing) return;
-    advancing = true;
-    const roundsPlayed = ($game?.currentRound ?? 0) + 1;
-    // The last round ends here, not in `next()` — report it before the game.
-    trackEvent('round_end', { round: roundsPlayed });
-    trackEvent('game_finish', {
-      roundsPlayed,
-      players: players.length,
-      remote: isRemote,
-    });
               {@const entry = round.answers.find(
                 (a) => a.playerId === p.id && a.categoryId === catId,
               )}
@@ -385,6 +428,9 @@
   <Modal open={currentVote !== null}>
     <div class="vote-emoji">🤔</div>
     <p class="vote-question">{voteQuestion}</p>
+    {#if voteTotal > 1}
+      <p class="vote-progress">{voteProgressText}</p>
+    {/if}
     {#if votesOnDevices}
       <p class="vote-phones">📱 {$t('review.vote.phones')}</p>
       <div class="ballots">
@@ -584,6 +630,12 @@
   .ballot.away {
     color: var(--color-muted);
     border-style: dashed;
+  }
+  .vote-progress {
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
+    font-variant-numeric: tabular-nums;
+    margin-block-end: var(--space-3);
   }
   .vote-count {
     color: var(--color-muted);

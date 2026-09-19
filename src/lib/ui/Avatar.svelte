@@ -18,8 +18,10 @@
     <img src={avatar} alt={name} />
   {:else if avatar !== undefined && avatar !== ''}
     <span aria-hidden="true">{avatar}</span>
+  {:else if name.trim() === ''}
+    <span aria-hidden="true">🙂</span>
   {:else}
-    {name.slice(0, 1).toLocaleUpperCase()}
+    {name.trim().slice(0, 1).toLocaleUpperCase()}
   {/if}
 </span>
 

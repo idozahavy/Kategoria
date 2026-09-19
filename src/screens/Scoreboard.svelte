@@ -104,7 +104,13 @@
   const winnerNames = $derived(
     standings.filter((s) => s.score === topScore).map((s) => s.player.name),
   );
-  const winnerText = $derived($t('score.winner').replace('{name}', winnerNames.join(' & ')));
+  // A tie needs the plural verb ("ניצחו", "gagnent"), not the singular one.
+  const winnerText = $derived(
+    $t(winnerNames.length > 1 ? 'score.winners' : 'score.winner').replace(
+      '{name}',
+      winnerNames.join(' & '),
+    ),
+  );
 
   // Remote game: guests see the final scores on their own devices too.
   let sentScores = false;

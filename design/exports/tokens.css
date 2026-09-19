@@ -23,6 +23,7 @@
   --color-danger-edge: #8F181C;
   --color-on-danger: #FFFFFF;
   --color-focus: #6D41E0;
+  --color-scrim: #3D3436;
   --color-player-1: #0E7C72;
   --color-player-2: #C61E72;
   --color-player-3: #B45309;
@@ -109,6 +110,7 @@
   --color-danger-edge: #C4585C;
   --color-on-danger: #4A0A0C;
   --color-focus: #C4A8FF;
+  --color-scrim: #241B1D;
   --color-player-1: #3DD6C6;
   --color-player-2: #FF7AB8;
   --color-player-3: #FFB061;

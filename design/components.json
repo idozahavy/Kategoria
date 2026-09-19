@@ -48,7 +48,7 @@
     },
     "modal": {
       "id": "M6",
-      "spec": "Overlay rgba(61,52,54,0.5) at z {z.overlay}; panel: surface, radius {radius.lg}, padding {space.5}, centered, max 2 action buttons, big emoji allowed as illustration. z {z.modal}."
+      "spec": "Overlay {color.light.scrim} at 60% (dark theme: {color.dark.scrim}) at z {z.overlay}; panel: surface, radius {radius.lg}, padding {space.5}, centered, max 2 action buttons, big emoji allowed as illustration. z {z.modal}."
     },
     "score-row": {
       "id": "M7",

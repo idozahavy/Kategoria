@@ -420,6 +420,19 @@
 
     <div class="letter-row">
       <LetterTile letter={round.letter} />
+      {#if isRemote}
+        <!-- Guests fill in on their phones, so the shared screen names the
+             categories everyone is working on next to the letter. -->
+        <div class="host-cats">
+          {#each round.categoryIds as catId (catId)}
+            {@const cat = categoryFor(catId)}
+            <span class="host-cat">
+              <span class="cat-emoji">{categoryEmoji(cat ?? catId)}</span>
+              <span class="cat-name">{cat ? $categoryName(cat) : catId}</span>
+            </span>
+          {/each}
+        </div>
+      {/if}
       {#if $game.settings.timerSeconds}
         <TimerPill seconds={timeLeft ?? $game.settings.timerSeconds} />
       {/if}
@@ -608,6 +621,28 @@
     margin-inline: calc(-1 * var(--space-4));
     padding-inline: var(--space-4);
     padding-block: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .host-cats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-2);
+    /* Grows between the letter and the timer; long lists wrap here rather
+       than pushing the timer onto a new line. Never narrower than its widest
+       chip, so on a phone-sized host the row wraps instead of overlapping. */
+    flex: 1 1 0;
+    min-inline-size: min-content;
+  }
+  .host-cat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-pill);
+    padding-block: var(--space-2);
+    padding-inline: var(--space-4);
   }
   .cards {
     display: flex;
@@ -727,5 +762,32 @@
   .modal-actions {
     display: flex;
     gap: var(--space-3);
+  }
+  /* Short screens (a 390x844 phone and anything smaller): tighten the round so
+     all five category cards plus the letter, timer and Done button fit without
+     scrolling. Custom properties reach the LetterTile and Card components by
+     inheritance, so no :global() specificity fight. */
+  @media (max-height: 900px) {
+    .letter-row {
+      --tile-size: 72px;
+      padding-block: var(--space-1);
+    }
+    .cards {
+      --card-padding-block: var(--space-3);
+      gap: var(--space-2);
+    }
+    .cat-header {
+      margin-block-end: var(--space-1);
+    }
+    .cat-emoji {
+      font-size: var(--font-size-body);
+    }
+  }
+  /* Hosting the room from a phone: the wrapping chip list would eat the whole
+     viewport. Every guest already has the category list on their own device. */
+  @media (max-width: 600px) {
+    .host-cats {
+      display: none;
+    }
   }
 </style>

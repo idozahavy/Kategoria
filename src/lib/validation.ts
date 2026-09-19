@@ -185,12 +185,71 @@ export async function forgetWord(
 const factCache = new Map<string, string | null>();
 
 /**
+ * Wikidata ranks pop culture above the everyday sense ("Elephant" is a White
+ * Stripes album before it is an animal). These senses are never what a kid
+ * meant by a game word, so they never become a fact.
+ */
+const MEDIA_SENSES = [
+  'album',
+  'song',
+  'single',
+  'film',
+  'movie',
+  'tv series',
+  'television series',
+  'video game',
+  'band',
+  'novel',
+  'manga',
+  'anime',
+  'episode',
+  'disambiguation',
+  'Wikimedia',
+  'EP',
+];
+
+/** Rejected everywhere except the name category, where they are the right sense. */
+const PERSON_NAME_SENSES = ['surname', 'family name'];
+
+const FACT_REJECT = new RegExp(
+  `\\b(${[...MEDIA_SENSES, ...PERSON_NAME_SENSES].join('|')})\\b`,
+  'i',
+);
+const FACT_REJECT_NAME = new RegExp(`\\b(${MEDIA_SENSES.join('|')})\\b`, 'i');
+
+/**
+ * Descriptions that read like the category, keyed by the builtin ids of
+ * `WIKIDATA_CLASS`. English-biased on purpose: these only rank candidates that
+ * already passed the reject list, so other languages simply fall back to the
+ * first clean hit.
+ */
+const FACT_HINT: Record<string, RegExp> = {
+  animal: /\b(animal|species|genus|mammal|bird|fish|reptile|amphibian|insect|arachnid|breed)\b/i,
+  food: /\b(food|dish|dessert|cuisine|snack|meal|edible|beverage|drink|bread|cheese|sauce)\b/i,
+  city: /\b(city|town|village|municipality|capital|settlement|commune|borough|county seat)\b/i,
+  country: /\b(country|sovereign state|nation|republic|kingdom|federation)\b/i,
+  name: /\b(given name|surname|family name|male name|female name|personal name)\b/i,
+  plant: /\b(plant|tree|flower|genus|species|shrub|herb|grass|vegetable|fungus)\b/i,
+  profession: /\b(profession|occupation|job|worker|person who|specialist|practitioner)\b/i,
+  sport: /\b(sport|game|athletic|olympic|discipline|martial art)\b/i,
+  color: /\b(colou?r|shade|hue|pigment|tint)\b/i,
+};
+
+/**
  * A one-line "did you know" description of the word from Wikidata, in the
  * given language. Never throws; null when nothing kid-worthy is found.
+ *
+ * `categoryId` (a builtin id) steers which sense of the word is described:
+ * media senses are dropped and a description that reads like the category wins
+ * over the search engine's own ranking.
  */
-export async function wordFact(word: string, language: string): Promise<string | null> {
+export async function wordFact(
+  word: string,
+  language: string,
+  categoryId?: string,
+): Promise<string | null> {
   const w = normalizeWord(word);
-  const key = `${language}:${w}`;
+  const key = `${language}:${categoryId ?? ''}:${w}`;
   const cached = factCache.get(key);
   if (cached !== undefined) return cached;
   try {
@@ -201,13 +260,18 @@ export async function wordFact(word: string, language: string): Promise<string |
     const data = (await res.json()) as {
       search?: { description?: string; match?: { text?: string } }[];
     };
-    const hit = (data.search ?? []).find(
-      (s) =>
-        s.match?.text?.toLocaleLowerCase() === w &&
-        typeof s.description === 'string' &&
-        s.description !== '',
-    );
-    const fact = hit?.description ?? null;
+    const reject = categoryId === 'name' ? FACT_REJECT_NAME : FACT_REJECT;
+    const candidates: string[] = [];
+    for (const s of data.search ?? []) {
+      const description = s.description;
+      if (s.match?.text?.toLocaleLowerCase() !== w) continue;
+      if (typeof description !== 'string' || description === '') continue;
+      if (reject.test(description)) continue;
+      candidates.push(description);
+    }
+    const hint = categoryId === undefined ? undefined : FACT_HINT[categoryId];
+    const preferred = hint === undefined ? undefined : candidates.find((d) => hint.test(d));
+    const fact = preferred ?? candidates[0] ?? null;
     factCache.set(key, fact);
     return fact;
   } catch {

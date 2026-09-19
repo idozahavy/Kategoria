@@ -3,7 +3,7 @@
 _Log undefined visual decisions here instead of improvising; the next `design-scheme revise` run turns them into real decisions._
 
 - App name/logo: mockups use a placeholder "🎪 Categories!" title. A real name + wordmark treatment is undecided.
-- Shared-screen (TV) type scale: provisionally implemented as `zoom: 1.3` + 560px shell on remote-host screens (App.svelte `.shell.tv`, design-ignore pragma). A real tokenized TV scale (per-size overrides instead of zoom) is still an open decision.
+- Shared-screen (TV) type scale: provisionally implemented as a `--tv-scale` custom property on the shell (1 by default, 1.3 on remote-host screens driving `zoom`, forced back to 1 under 600px so a phone hosting a room isn't zoomed); `min-block-size` divides it back out so the zoomed shell isn't taller than the viewport (App.svelte `.shell` / `.shell.tv`, design-ignore pragma). A real tokenized TV scale (per-size overrides instead of zoom) is still an open decision.
 - Confetti/celebration visual spec (colors, particle count, duration) — motion tokens exist, the celebration composition itself is undefined.
 - Remote waiting chips (host round screen): provisional pill chips flipping to success colors when a player has submitted (Round.svelte `.wait-chip`). Register as a component if kept.
 - Emoji illustration sizes: hero/empty-state emoji use `calc(var(--font-size-display) * 1.6)` (≈64px) and the vote emoji `* 1.2` (≈48px); inline category/crown emoji use `--font-size-h2`. Dedicated illustration-size tokens are undecided.

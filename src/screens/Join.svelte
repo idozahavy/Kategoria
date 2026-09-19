@@ -370,6 +370,7 @@
         <button
           type="button"
           class="avatar-btn"
+          class:is-empty={avatar === undefined}
           aria-label={$t('setup.avatar')}
           onclick={() => (avatarPickerOpen = true)}
         >
@@ -497,9 +498,16 @@
           {/each}
         </div>
       </Card>
-      <p class="round-title">{$t('join.results.next')}</p>
+      <p class="round-title">
+        {results.roundCount !== 0 && results.roundIndex + 1 >= results.roundCount
+          ? $t('join.results.final')
+          : $t('join.results.next')}
+      </p>
     </div>
   {:else if phase === 'scores' && scores}
+    <!-- The host sends the winners pre-joined, so count the tie here to pick the plural. -->
+    {@const rows = scores.rows}
+    {@const tiedCount = rows.filter((r) => r.score === (rows[0]?.score ?? 0)).length}
     <div class="content">
       <h1 class="scores-title">{$t('score.title')}</h1>
       <div class="score-rows">
@@ -512,7 +520,9 @@
           </Card>
         {/each}
       </div>
-      <p class="big">{$t('score.winner').replace('{name}', scores.winner)}</p>
+      <p class="big">
+        {$t(tiedCount > 1 ? 'score.winners' : 'score.winner').replace('{name}', scores.winner)}
+      </p>
       <Button variant="primary" block onclick={leave}>{$t('score.home')}</Button>
     </div>
   {:else if phase === 'error'}
@@ -662,6 +672,19 @@
     justify-content: center;
     cursor: pointer;
     border-radius: var(--radius-pill);
+    position: relative;
+  }
+  .avatar-btn.is-empty::after {
+    content: '✏️';
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    font-size: var(--font-size-small);
+    line-height: 1;
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-pill);
+    padding: var(--space-1);
   }
   .modal-text {
     font-weight: var(--font-weight-subheading);

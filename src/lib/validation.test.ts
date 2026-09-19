@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { checkWord, inBundledList, type WordCheckOptions } from './validation';
+import { checkWord, inBundledList, type WordCheckOptions, wordFact } from './validation';
 import { ensureWords } from './words';
 
 function opts(overrides: Partial<WordCheckOptions> = {}): WordCheckOptions {
@@ -47,5 +47,72 @@ describe('inBundledList', () => {
     await ensureWords('en');
     expect(inBundledList(' ANT ', 'animal', 'en')).toBe(true);
     expect(inBundledList('ant', 'no-such-category', 'en')).toBe(false);
+  });
+});
+
+describe('wordFact sense picking', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** One wbsearchentities response; every entry matches the word exactly. */
+  function stubSearch(word: string, descriptions: string[]) {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        Response.json({
+          search: descriptions.map((description, i) => ({
+            id: `Q${String(i)}`,
+            match: { text: word },
+            description,
+          })),
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('describes the animal, not the album Wikidata ranks first', async () => {
+    stubSearch('elephant', [
+      '2003 album by The White Stripes',
+      'village in Lombardy',
+      'large terrestrial mammal with a trunk',
+    ]);
+    await expect(wordFact('Elephant', 'en', 'animal')).resolves.toBe(
+      'large terrestrial mammal with a trunk',
+    );
+  });
+
+  it('has nothing to say when every sense is media or a disambiguation page', async () => {
+    stubSearch('tusk', [
+      '1979 album by Fleetwood Mac',
+      '1980 film',
+      'Wikimedia disambiguation page',
+    ]);
+    await expect(wordFact('tusk', 'en', 'animal')).resolves.toBeNull();
+  });
+
+  it('without a category still skips the album and takes the first clean sense', async () => {
+    stubSearch('mammoth', ['1996 song by a band', 'extinct genus of elephantid']);
+    await expect(wordFact('mammoth', 'en')).resolves.toBe('extinct genus of elephantid');
+  });
+
+  it('caches per category, so the same word is looked up again for another one', async () => {
+    const fetchMock = stubSearch('orange', [
+      'citrus fruit, a food',
+      'colour between red and yellow',
+    ]);
+    await expect(wordFact('orange', 'en', 'food')).resolves.toBe('citrus fruit, a food');
+    await expect(wordFact('orange', 'en', 'color')).resolves.toBe('colour between red and yellow');
+    await expect(wordFact('orange', 'en', 'food')).resolves.toBe('citrus fruit, a food');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps person-name senses for the 'name' category", async () => {
+    stubSearch('jordan', ['male given name', 'country in the Middle East']);
+    await expect(wordFact('Jordan', 'en', 'name')).resolves.toBe('male given name');
+    stubSearch('taylor', ['2001 album', 'surname']);
+    await expect(wordFact('Taylor', 'en', 'name')).resolves.toBe('surname');
+    await expect(wordFact('Taylor', 'en', 'animal')).resolves.toBeNull();
   });
 });

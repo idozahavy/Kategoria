@@ -1,7 +1,8 @@
 import { get } from 'svelte/store';
 import { describe, expect, it } from 'vitest';
 
-import { availablePacks, categoryName, getPack, t, uiLanguage } from './index';
+import type { LanguagePack } from '../types';
+import { availablePacks, categoryName, getPack, registerPack, t, tn, uiLanguage } from './index';
 
 describe('language packs', () => {
   it('ships six packs, each with a direction and a letter wheel', () => {
@@ -35,6 +36,46 @@ describe('t (UI translation)', () => {
     uiLanguage.set('he');
     const translate = get(t);
     expect(translate('no.such.key')).toBe('no.such.key');
+    uiLanguage.set('en');
+  });
+});
+
+describe('tn (plural translation)', () => {
+  it('picks the English singular and plural forms', () => {
+    uiLanguage.set('en');
+    const plural = get(tn);
+    expect(plural('board.games', 1)).toBe('1 game');
+    expect(plural('board.games', 4)).toBe('4 games');
+    expect(plural('board.wins', 1)).toBe('1 win');
+    expect(plural('board.wins', 0)).toBe('0 wins');
+    uiLanguage.set('en');
+  });
+
+  it('picks the Russian few and many forms', () => {
+    uiLanguage.set('ru');
+    const plural = get(tn);
+    expect(plural('board.games', 1)).toBe('1 игра');
+    expect(plural('board.games', 3)).toBe('3 игры');
+    expect(plural('board.games', 7)).toBe('7 игр');
+    expect(plural('board.wins', 2)).toBe('2 победы');
+    uiLanguage.set('en');
+  });
+
+  it('falls back to the other form, then to the key itself', () => {
+    // A pack that only defines `.other`: German's `one` form must fall back.
+    const sparse: LanguagePack = {
+      code: 'de',
+      name: 'Deutsch',
+      dir: 'ltr',
+      letters: ['A'],
+      ui: { 'board.games.other': '{n} Spiele' },
+      categoryNames: {},
+    };
+    registerPack(sparse);
+    uiLanguage.set('de');
+    const plural = get(tn);
+    expect(plural('board.games', 1)).toBe('1 Spiele');
+    expect(plural('no.such.key', 2)).toBe('no.such.key');
     uiLanguage.set('en');
   });
 });

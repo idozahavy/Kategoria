@@ -1,6 +1,6 @@
 # Kategoria Design Scheme
 
-**Version: 1.0.0** · Established 2026-08-30 · Direction: **Candy Pop** (teal-lead)
+**Version: 1.0.1** · Established 2026-08-30 · Direction: **Candy Pop** (teal-lead)
 
 ## Decisions & rationale
 | ID | Decision | Rationale |
@@ -30,4 +30,5 @@
 - (none)
 
 ## Changelog
+- 1.0.1 (2026-09-19) — semantic `scrim` color token (modal backdrop, both themes).
 - 1.0.0 (2026-08-30) — Initial scheme: interview → 3 directions (A chosen) → refinements C2, F1+S1, R1, MA, M1–M10, D1 all approved. Commits prefixed `design-approve:`.

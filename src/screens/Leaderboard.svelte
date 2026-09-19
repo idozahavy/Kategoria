@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
 
   import { listProfiles } from '../lib/db';
-  import { t } from '../lib/i18n';
+  import { t, tn } from '../lib/i18n';
   import { screen } from '../lib/stores';
   import type { PlayerProfile } from '../lib/types';
   import Avatar from '../lib/ui/Avatar.svelte';
@@ -23,9 +23,7 @@
   });
 
   function statsLine(p: PlayerProfile): string {
-    return $t('board.stats')
-      .replace('{games}', String(p.gamesPlayed))
-      .replace('{wins}', String(p.wins));
+    return `${$tn('board.games', p.gamesPlayed)} · ${$tn('board.wins', p.wins)}`;
   }
 </script>
 

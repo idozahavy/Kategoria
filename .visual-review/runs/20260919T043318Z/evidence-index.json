@@ -1,0 +1,548 @@
+[
+  {
+    "file": "evidence/01-home-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:34:21.531Z"
+  },
+  {
+    "file": "evidence/02-new-game-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:34:38.314Z"
+  },
+  {
+    "file": "evidence/03-avatar-picker-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:34:42.868Z"
+  },
+  {
+    "file": "evidence/04-rules-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:34:49.871Z"
+  },
+  {
+    "file": "evidence/05-game-options-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:34:53.615Z"
+  },
+  {
+    "file": "evidence/06-advanced-options-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:34:59.716Z"
+  },
+  {
+    "file": "evidence/07-round-ready-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:35:03.517Z"
+  },
+  {
+    "file": "evidence/08-round-filled-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:35:09.586Z"
+  },
+  {
+    "file": "evidence/09-review-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:35:09.901Z"
+  },
+  {
+    "file": "evidence/10-scoreboard-dark-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:35:15.243Z"
+  },
+  {
+    "file": "evidence/11-home-light-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:35:40.779Z"
+  },
+  {
+    "file": "evidence/12-leaderboard-light-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:35:41.010Z"
+  },
+  {
+    "file": "evidence/13-learned-empty-light-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:35:49.877Z"
+  },
+  {
+    "file": "evidence/14-join-light-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:04.743Z"
+  },
+  {
+    "file": "evidence/15-join-validation-light-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:10.158Z"
+  },
+  {
+    "file": "evidence/16-join-connecting-light-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:10.391Z"
+  },
+  {
+    "file": "evidence/17-join-result-light-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:23.167Z"
+  },
+  {
+    "file": "evidence/18-home-hebrew-light-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:33.593Z"
+  },
+  {
+    "file": "evidence/19-players-hebrew-light-320.png",
+    "width": 320,
+    "height": 740,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:33.822Z"
+  },
+  {
+    "file": "evidence/20-players-validation-hebrew-320.png",
+    "width": 320,
+    "height": 740,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:45.019Z"
+  },
+  {
+    "file": "evidence/21-categories-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:45.276Z"
+  },
+  {
+    "file": "evidence/22-categories-bottom-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:49.694Z"
+  },
+  {
+    "file": "evidence/23-options-hebrew-320.png",
+    "width": 320,
+    "height": 740,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:55.127Z"
+  },
+  {
+    "file": "evidence/24-handoff-hebrew-320.png",
+    "width": 320,
+    "height": 740,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:55.373Z"
+  },
+  {
+    "file": "evidence/25-round-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:36:59.307Z"
+  },
+  {
+    "file": "evidence/26-wrong-letter-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:10.907Z"
+  },
+  {
+    "file": "evidence/27-round-settings-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:11.156Z"
+  },
+  {
+    "file": "evidence/28-round-settings-bottom-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:23.971Z"
+  },
+  {
+    "file": "evidence/29-incomplete-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:31.297Z"
+  },
+  {
+    "file": "evidence/30-second-handoff-hebrew-320.png",
+    "width": 320,
+    "height": 740,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:35.214Z"
+  },
+  {
+    "file": "evidence/31-round-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:43.157Z"
+  },
+  {
+    "file": "evidence/32-vote-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:51.525Z"
+  },
+  {
+    "file": "evidence/33-shared-review-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:37:56.103Z"
+  },
+  {
+    "file": "evidence/34-shared-review-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:38:00.541Z"
+  },
+  {
+    "file": "evidence/35-shared-review-bottom-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:38:16.914Z"
+  },
+  {
+    "file": "evidence/36-tied-scoreboard-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:38:17.153Z"
+  },
+  {
+    "file": "evidence/37-learned-populated-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:38:24.333Z"
+  },
+  {
+    "file": "evidence/38-home-arabic-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:38:44.723Z"
+  },
+  {
+    "file": "evidence/39-host-opening-arabic-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:38:48.609Z"
+  },
+  {
+    "file": "evidence/40-host-lobby-arabic-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:39:17.873Z"
+  },
+  {
+    "file": "evidence/41-guest-lobby-arabic-dark-390.png",
+    "width": 1280,
+    "height": 720,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:39:38.045Z"
+  },
+  {
+    "file": "evidence/42-host-populated-arabic-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:39:38.102Z"
+  },
+  {
+    "file": "evidence/43-categories-arabic-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:39:42.990Z"
+  },
+  {
+    "file": "evidence/44-remote-options-arabic-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:39:47.272Z"
+  },
+  {
+    "file": "evidence/45-remote-host-round-arabic-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:39:57.539Z"
+  },
+  {
+    "file": "evidence/46-remote-guest-entry-arabic-390.png",
+    "width": 1280,
+    "height": 720,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:39:57.597Z"
+  },
+  {
+    "file": "evidence/47-remote-guest-waiting-arabic-390.png",
+    "width": 1280,
+    "height": 720,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:03.256Z"
+  },
+  {
+    "file": "evidence/48-remote-host-review-arabic-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:03.288Z"
+  },
+  {
+    "file": "evidence/49-remote-host-scores-arabic-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:11.167Z"
+  },
+  {
+    "file": "evidence/50-remote-guest-scores-arabic-390.png",
+    "width": 1280,
+    "height": 720,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:11.216Z"
+  },
+  {
+    "file": "evidence/51-guest-host-left-arabic-390.png",
+    "width": 1280,
+    "height": 720,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:43.835Z"
+  },
+  {
+    "file": "evidence/52-home-french-dark-tablet.png",
+    "width": 768,
+    "height": 1024,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:44.089Z"
+  },
+  {
+    "file": "evidence/53-home-russian-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:50.187Z"
+  },
+  {
+    "file": "evidence/54-home-spanish-dark-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:50.436Z"
+  },
+  {
+    "file": "evidence/55-bot-setup-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:40:58.977Z"
+  },
+  {
+    "file": "evidence/56-custom-category-recheck-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:41:08.269Z"
+  },
+  {
+    "file": "evidence/57-long-custom-category-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:41:31.135Z"
+  },
+  {
+    "file": "evidence/58-custom-added-hebrew-320.png",
+    "width": 305,
+    "height": 705,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:41:37.084Z"
+  },
+  {
+    "file": "evidence/59-timed-round-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:41:50.787Z"
+  },
+  {
+    "file": "evidence/60-timer-progress-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:42:08.551Z"
+  },
+  {
+    "file": "evidence/61-round-bottom-timer-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:42:08.768Z"
+  },
+  {
+    "file": "evidence/62-time-up-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:06.350Z"
+  },
+  {
+    "file": "evidence/63-review-word-fact-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:16.374Z"
+  },
+  {
+    "file": "evidence/64-ongoing-scoreboard-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:16.589Z"
+  },
+  {
+    "file": "evidence/65-leave-game-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:24.915Z"
+  },
+  {
+    "file": "evidence/66-returning-home-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:36.441Z"
+  },
+  {
+    "file": "evidence/67-resume-list-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:41.139Z"
+  },
+  {
+    "file": "evidence/68-delete-save-dialog-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:49.828Z"
+  },
+  {
+    "file": "evidence/69-resumed-handoff-hebrew-390.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:43:55.578Z"
+  },
+  {
+    "file": "evidence/70-time-up-recheck-hebrew-390.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:44:27.827Z"
+  },
+  {
+    "file": "evidence/71-avatar-dark-settled-desktop.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:44:58.067Z"
+  },
+  {
+    "file": "evidence/72-empty-host-next-validation.png",
+    "width": 1440,
+    "height": 1000,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:45:33.015Z"
+  },
+  {
+    "file": "evidence/73-guest-round-english-dark-mobile.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:46:05.445Z"
+  },
+  {
+    "file": "evidence/74-guest-results-english-dark-mobile.png",
+    "width": 375,
+    "height": 812,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:46:11.174Z"
+  },
+  {
+    "file": "evidence/75-host-review-english-dark-desktop.png",
+    "width": 1425,
+    "height": 990,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:46:11.245Z"
+  },
+  {
+    "file": "evidence/76-host-review-bottom-english.png",
+    "width": 1425,
+    "height": 990,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:46:18.332Z"
+  },
+  {
+    "file": "evidence/77-host-scores-actions-recheck.png",
+    "width": 1425,
+    "height": 990,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:46:28.808Z"
+  },
+  {
+    "file": "evidence/78-guest-final-scores-mobile.png",
+    "width": 390,
+    "height": 844,
+    "mime": "image/jpeg",
+    "time": "2026-09-19T04:46:28.846Z"
+  }
+]

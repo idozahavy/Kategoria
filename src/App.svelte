@@ -143,9 +143,13 @@
 
 <style>
   .shell {
+    --tv-scale: 1;
     inline-size: 100%;
     max-inline-size: 480px;
-    min-block-size: 100dvh;
+    /* `zoom` scales the shell's own box, so a flat 100dvh would make the
+       document 1.3x the viewport tall on the TV shell no matter how little
+       content there is. Divide it back out. */
+    min-block-size: calc(100dvh / var(--tv-scale));
     display: flex;
     flex-direction: column;
     padding: var(--space-4);
@@ -154,6 +158,13 @@
   .shell.tv {
     max-inline-size: 560px;
     /* design-ignore: provisional shared-screen scale — real TV type tokens are an open design question */
-    zoom: 1.3;
+    --tv-scale: 1.3;
+    zoom: var(--tv-scale);
+  }
+  /* Hosting from a phone: the device *is* the small screen, so don't zoom. */
+  @media (max-width: 600px) {
+    .shell.tv {
+      --tv-scale: 1;
+    }
   }
 </style>

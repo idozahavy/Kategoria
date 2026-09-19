@@ -74,7 +74,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: color-mix(in srgb, var(--color-text) 50%, transparent);
+    background: color-mix(in srgb, var(--color-scrim) 60%, transparent);
     z-index: var(--z-overlay);
     display: flex;
     align-items: center;

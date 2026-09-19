@@ -11,6 +11,9 @@
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
-    padding: var(--space-4);
+    /* Longhands so a parent can tighten the vertical padding alone (via the
+       inherited --card-padding-block) on short screens. */
+    padding-block: var(--card-padding-block, var(--space-4));
+    padding-inline: var(--space-4);
   }
 </style>

@@ -58,6 +58,22 @@ export const t = derived(pack, (p) => (key: string): string => {
   return p.ui[key] ?? en.ui[key] ?? key;
 });
 
+/**
+ * Plural-aware translation: looks up `<key>.<CLDR plural form>` for `n` in the
+ * current language (Hebrew has `two`, Russian `few`/`many`, …), falls back to
+ * `<key>.other`, then to English, then to the key itself; `{n}` gets the count.
+ */
+export const tn = derived(pack, (p) => (key: string, n: number): string => {
+  const form = new Intl.PluralRules(p.code).select(n);
+  const template =
+    p.ui[`${key}.${form}`] ??
+    p.ui[`${key}.other`] ??
+    en.ui[`${key}.${form}`] ??
+    en.ui[`${key}.other`] ??
+    key;
+  return template.replace('{n}', String(n));
+});
+
 /** Category display name for the current UI language. */
 export const categoryName = derived(
   pack,

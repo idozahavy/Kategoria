@@ -132,6 +132,7 @@ export const COLOR_VAR_MAP = {
   'danger-edge': 'color-danger-edge',
   'on-danger': 'color-on-danger',
   focus: 'color-focus',
+  scrim: 'color-scrim',
   'player-1': 'color-player-1',
   'player-2': 'color-player-2',
   'player-3': 'color-player-3',
