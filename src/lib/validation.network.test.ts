@@ -116,10 +116,19 @@ describe('checkWord with lookups', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('accepts a dictionary hit and learns it for next time', async () => {
+  it('accepts a dictionary hit but does not learn it — existence is not category fit', async () => {
     stubFetch({ 'wiktionary.org': wiktionaryKnown });
     await expect(checkWord(' Axolotl ', opts())).resolves.toBe('valid');
-    expect(addLearnedWord).toHaveBeenCalledWith('en', 'animal', 'axolotl');
+    expect(addLearnedWord).not.toHaveBeenCalled();
+  });
+
+  it('never learns an existence-only hit when Wikidata cannot judge the category', async () => {
+    // 'object' has no Wikidata class, so only the existence check runs.
+    stubFetch({ 'wiktionary.org': wiktionaryKnown });
+    await expect(
+      checkWord('avocado', opts({ wikidata: true, categoryId: 'object' })),
+    ).resolves.toBe('valid');
+    expect(addLearnedWord).not.toHaveBeenCalled();
   });
 
   it('sends an unknown word to the group in both dictionary and hybrid modes', async () => {
@@ -195,7 +204,7 @@ describe('wordFact', () => {
         { text: 'okapi', description: 'forest giraffid of Congo' },
       ]),
     });
-    await expect(wordFact(' Okapi ', 'en')).resolves.toBe('forest giraffid of Congo');
+    await expect(wordFact(' Okapi ', 'en')).resolves.toBe('Forest giraffid of Congo.');
   });
 
   it('has nothing to say for prefix-only matches or empty descriptions', async () => {
@@ -211,8 +220,8 @@ describe('wordFact', () => {
     const working = stubFetch({
       wbsearchentities: search([{ text: 'rhea', description: 'bird' }]),
     });
-    await expect(wordFact('rhea', 'en')).resolves.toBe('bird');
-    await expect(wordFact('RHEA', 'en')).resolves.toBe('bird');
+    await expect(wordFact('rhea', 'en')).resolves.toBe('Bird.');
+    await expect(wordFact('RHEA', 'en')).resolves.toBe('Bird.');
     expect(failing).toHaveBeenCalledTimes(1);
     expect(working).toHaveBeenCalledTimes(1);
   });
@@ -221,7 +230,7 @@ describe('wordFact', () => {
     const offline = stubFetch({});
     await expect(wordFact('saola', 'en')).resolves.toBeNull();
     stubFetch({ wbsearchentities: search([{ text: 'saola', description: 'rare forest bovine' }]) });
-    await expect(wordFact('saola', 'en')).resolves.toBe('rare forest bovine');
+    await expect(wordFact('saola', 'en')).resolves.toBe('Rare forest bovine.');
     expect(offline).toHaveBeenCalledTimes(1);
   });
 });

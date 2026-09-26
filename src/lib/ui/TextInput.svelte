@@ -56,7 +56,7 @@
   }
   .inp {
     inline-size: 100%;
-    min-block-size: 48px;
+    min-block-size: var(--size-touch);
     border: var(--border-width) solid var(--color-border-strong);
     border-radius: var(--radius-md);
     background: var(--color-surface);

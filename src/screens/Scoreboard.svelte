@@ -1,12 +1,24 @@
 <script lang="ts">
   import { recordGameResult, saveGame } from '../lib/db';
-  import { createGame, isFinished, startNextRound, totalScores } from '../lib/game';
+  import {
+    createGame,
+    currentResults,
+    isFinished,
+    roundPoints,
+    startNextRound,
+    statsChanges,
+    totalScores,
+    winnerIds,
+  } from '../lib/game';
   import { t } from '../lib/i18n';
-  import { getActiveRoom, setActiveRoom } from '../lib/p2p';
+  import { getActiveRoom, setActiveRoom, type StandingRow, wireAvatar } from '../lib/p2p';
   import { playFanfare, vibrate } from '../lib/sound';
   import { game, screen, updateGame } from '../lib/stores';
   import Button from '../lib/ui/Button.svelte';
+  import Card from '../lib/ui/Card.svelte';
+  import Confetti from '../lib/ui/Confetti.svelte';
   import ScoreRow from '../lib/ui/ScoreRow.svelte';
+  import WinnerHero from '../lib/ui/WinnerHero.svelte';
 
   $effect(() => {
     if (!$game) screen.set('home');
@@ -21,19 +33,19 @@
   function finalize(): void {
     const g = $game;
     if (!g || g.status === 'finished') return;
-    if (g.hasRecordedStats !== true) {
-      const totals = totalScores(g);
-      const top = Math.max(0, ...totals.values());
-      for (const p of g.players) {
-        if (p.isBot === true) continue;
-        void recordGameResult(p.name, totals.get(p.id) ?? 0, (totals.get(p.id) ?? 0) === top);
-      }
+    // A revived game only moves the leaderboard by what the extra rounds changed.
+    for (const change of statsChanges(g)) {
+      const player = g.players.find((p) => p.id === change.playerId);
+      if (player) void recordGameResult(player.name, change);
     }
+    const results = currentResults(g);
     playFanfare();
     vibrate(200);
     updateGame((s) => {
       s.status = 'finished';
-      s.hasRecordedStats = true;
+      if (s.hasRecordedStats !== true || s.recordedResults !== undefined) {
+        s.recordedResults = results;
+      }
     });
   }
 
@@ -92,24 +104,39 @@
     screen.set('round');
   }
 
+  /** Rounds already scored — the mid-game view says where the game stands. */
+  const lastDoneRound = $derived($game?.rounds.findLast((r) => r.phase === 'done') ?? null);
+
   const standings = $derived.by(() => {
     if (!$game) return [];
     const totals = totalScores($game);
+    const gained = lastDoneRound ? roundPoints($game, lastDoneRound) : new Map<string, number>();
     return $game.players
-      .map((p) => ({ player: p, score: totals.get(p.id) ?? 0 }))
+      .map((p) => ({ player: p, score: totals.get(p.id) ?? 0, delta: gained.get(p.id) ?? 0 }))
       .sort((a, b) => b.score - a.score);
   });
 
-  const topScore = $derived(standings[0]?.score ?? 0);
-  const winnerNames = $derived(
-    standings.filter((s) => s.score === topScore).map((s) => s.player.name),
+  const afterRoundText = $derived(
+    $t('score.afterRound')
+      .replace('{n}', String((lastDoneRound?.index ?? -1) + 1))
+      .replace(
+        '{total}',
+        $game?.settings.isEndless === true ? '∞' : String($game?.settings.roundCount ?? 0),
+      ),
   );
+
+  /** Best total holders; empty while nobody has scored (no crowns at 0–0). */
+  const winners = $derived($game ? winnerIds($game) : []);
+  const winnerPlayers = $derived(standings.filter((s) => winners.includes(s.player.id)));
+  const winnerNames = $derived(winnerPlayers.map((s) => s.player.name));
   // A tie needs the plural verb ("ניצחו", "gagnent"), not the singular one.
   const winnerText = $derived(
-    $t(winnerNames.length > 1 ? 'score.winners' : 'score.winner').replace(
-      '{name}',
-      winnerNames.join(' & '),
-    ),
+    winnerNames.length === 0
+      ? $t('score.noWinner')
+      : $t(winnerNames.length > 1 ? 'score.winners' : 'score.winner').replace(
+          '{name}',
+          winnerNames.join(' & '),
+        ),
   );
 
   // Remote game: guests see the final scores on their own devices too.
@@ -120,21 +147,17 @@
     sentScores = true;
     getActiveRoom()?.broadcast({
       type: 'scores',
-      rows: standings.map((s) => ({ name: s.player.name, score: s.score })),
+      rows: standings.map((s): StandingRow => ({
+        name: s.player.name,
+        score: s.score,
+        colorIndex: s.player.colorIndex,
+        ...wireAvatar(s.player.avatar),
+        delta: 0,
+        isWinner: winners.includes(s.player.id),
+      })),
       winner: winnerNames.join(' & '),
     });
   });
-
-  const confettiDots = Array.from({ length: 24 }, (_, i) => i);
-  function dotColor(i: number) {
-    return `var(--color-player-${(i % 8) + 1})`;
-  }
-  function dotLeft(i: number) {
-    return `${(i * 37) % 100}%`;
-  }
-  function dotDelay(i: number) {
-    return `${(i % 6) * 0.08}s`;
-  }
 
   function playAgain() {
     if (!$game) return;
@@ -155,38 +178,55 @@
 </script>
 
 {#if $game}
+  {#if isOver && winnerPlayers.length > 0}
+    <Confetti />
+  {/if}
+
   {#if isOver}
-    <div class="confetti" aria-hidden="true">
-      {#each confettiDots as i (i)}
-        <span
-          class="dot"
-          style="inset-inline-start:{dotLeft(i)}; background:{dotColor(
-            i,
-          )}; animation-delay:{dotDelay(i)};"
-        ></span>
-      {/each}
+    <!-- The winner is the hero of the final screen; the full table follows. -->
+    <WinnerHero
+      winners={winnerPlayers.map((w) => ({
+        name: w.player.name,
+        avatar: w.player.avatar,
+        colorIndex: w.player.colorIndex,
+      }))}
+      text={winnerText}
+    />
+  {:else}
+    <div class="heading">
+      <h1 class="title">{$t('score.title')}</h1>
+      {#if lastDoneRound !== null}
+        <p class="subtitle">{afterRoundText}</p>
+      {/if}
     </div>
   {/if}
 
-  <h1 class="title">{$t('score.title')}</h1>
-
   <div class="rows">
-    {#each standings as s (s.player.id)}
-      <div class="row-wrap" class:top={s.score === topScore}>
-        {#if s.score === topScore}<span class="crown">👑</span>{/if}
-        <ScoreRow
-          name={s.player.name}
-          score={s.score}
-          colorIndex={s.player.colorIndex}
-          avatar={s.player.avatar}
-        />
+    <Card>
+      <div class="row-list">
+        {#each standings as s (s.player.id)}
+          {@const isWinner = winners.includes(s.player.id)}
+          <div class="row-wrap">
+            <!-- Every row keeps the crown's slot, so names line up under the winner's. -->
+            {#if winners.length > 0}<span class="crown" aria-hidden="true"
+                >{isWinner ? '👑' : ''}</span
+              >{/if}
+            <!-- Mid-game rows count up from before the last round and show its gain. -->
+            <ScoreRow
+              name={s.player.name}
+              score={s.score}
+              from={isOver ? 0 : s.score - s.delta}
+              delta={isOver ? undefined : s.delta}
+              colorIndex={s.player.colorIndex}
+              avatar={s.player.avatar}
+            />
+          </div>
+        {/each}
       </div>
-    {/each}
+    </Card>
   </div>
 
   {#if isOver}
-    <p class="winner">{winnerText}</p>
-
     <div class="actions">
       <Button variant="secondary" block disabled={advancing} onclick={oneMoreRound}
         >{$t('score.oneMore')}</Button
@@ -202,57 +242,39 @@
       {#if autoNextActive}
         <Button variant="ghost" block onclick={stopAutoNext}>{stopAutoText}</Button>
       {/if}
-      <Button variant="danger" block onclick={finalize}>{$t('score.endGame')}</Button>
+      <!-- Quiet on purpose: ending early shouldn't compete with playing on. -->
+      <Button variant="ghost" block onclick={finalize}>{$t('score.endGame')}</Button>
     </div>
   {/if}
 {/if}
 
 <style>
-  .confetti {
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    z-index: var(--z-toast);
-  }
-  .dot {
-    position: absolute;
-    inset-block-start: -8px;
-    inline-size: 8px;
-    block-size: 8px;
-    border-radius: var(--radius-pill);
-    animation: fall 1.5s ease-in forwards;
-  }
-  @keyframes fall {
-    to {
-      transform: translateY(110vh) rotate(180deg);
-      opacity: 0.4;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .confetti {
-      display: none;
-    }
+  .heading {
+    text-align: center;
   }
   .title {
     font-size: var(--font-size-display);
     font-weight: var(--font-weight-display);
     line-height: var(--line-height-display);
-    text-align: center;
   }
+  .subtitle {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-subheading);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Takes the free height, so the actions stay at the bottom of the screen. */
   .rows {
+    flex: 1;
+  }
+  .row-list {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    flex: 1;
   }
   .row-wrap {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-  }
-  .row-wrap.top {
-    transform: scale(1.05);
   }
   .row-wrap :global(.row) {
     flex: 1;
@@ -260,11 +282,8 @@
   .crown {
     font-size: var(--font-size-h2);
     flex-shrink: 0;
-  }
-  .winner {
+    min-inline-size: calc(var(--font-size-h2) * 1.3);
     text-align: center;
-    font-size: var(--font-size-h1);
-    font-weight: var(--font-weight-heading);
   }
   .actions {
     display: flex;

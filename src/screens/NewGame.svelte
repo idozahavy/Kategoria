@@ -35,6 +35,8 @@
   import Button from '../lib/ui/Button.svelte';
   import Chip from '../lib/ui/Chip.svelte';
   import Modal from '../lib/ui/Modal.svelte';
+  import Select from '../lib/ui/Select.svelte';
+  import Stepper from '../lib/ui/Stepper.svelte';
   import TextInput from '../lib/ui/TextInput.svelte';
   import TopBar from '../lib/ui/TopBar.svelte';
 
@@ -118,12 +120,32 @@
     }
   });
 
-  /** Saved players not already in the list — one tap fills a seat. */
-  const profileSuggestions = $derived(
-    profiles.filter((prof) => !players.some((p) => p.name.trim().toLocaleLowerCase() === prof.key)),
+  /** The seat a saved player is sitting in, if any. */
+  function seatOf(prof: PlayerProfile): PlayerDraft | undefined {
+    return players.find((p) => p.name.trim().toLocaleLowerCase() === prof.key);
+  }
+
+  /**
+   * Saved players as on/off chips. Every chip keeps its place when tapped (a
+   * picked one lights up instead of vanishing), so a quick second tap can't
+   * land on a chip that slid under the finger.
+   */
+  const profileChips = $derived(
+    profiles.map((prof) => ({ prof, isPicked: seatOf(prof) !== undefined })),
   );
 
-  function pickProfile(prof: PlayerProfile): void {
+  function toggleProfile(prof: PlayerProfile): void {
+    stepError = '';
+    const seat = seatOf(prof);
+    if (seat) {
+      // The last seat can't go; it just empties.
+      if (players.length > 1) removePlayer(seat.id);
+      else {
+        seat.name = '';
+        seat.avatar = undefined;
+      }
+      return;
+    }
     const empty = players.find((p) => p.name.trim() === '');
     if (empty) {
       empty.name = prof.name;
@@ -131,7 +153,6 @@
     } else if (players.length < 8) {
       players.push({ id: newId(), name: prof.name, avatar: prof.avatar });
     }
-    stepError = '';
   }
 
   function addBot(): void {
@@ -155,7 +176,7 @@
     }
     const url = `${location.origin}${location.pathname}?join=${roomCode}`;
     void import('qrcode')
-      .then(({ default: QRCode }) => QRCode.toDataURL(url, { width: 220, margin: 1 }))
+      .then(({ default: QRCode }) => QRCode.toDataURL(url, { width: 480, margin: 1 }))
       .then((u) => (qrDataUrl = u))
       .catch(() => (qrDataUrl = ''));
   });
@@ -416,12 +437,17 @@
       </div>
 
       {#if playStyle === 'local'}
-        {#if profileSuggestions.length > 0}
+        {#if profileChips.length > 0}
           <div class="chip-row">
-            {#each profileSuggestions as prof (prof.key)}
-              <Chip on={false} onclick={() => pickProfile(prof)}>
+            {#each profileChips as { prof, isPicked } (prof.key)}
+              <Chip on={isPicked} onclick={() => toggleProfile(prof)}>
                 <span class="profile-chip">
-                  <Avatar name={prof.name} avatar={prof.avatar} size={22} />
+                  <!-- A picked chip swaps its avatar for a check: same width, no layout shift. -->
+                  {#if isPicked}
+                    <span class="profile-check" aria-hidden="true">✓</span>
+                  {:else}
+                    <Avatar name={prof.name} avatar={prof.avatar} size={22} />
+                  {/if}
                   {prof.name}
                 </span>
               </Chip>
@@ -634,50 +660,43 @@
       </div>
 
       <h2 class="section-title">{$t('setup.rounds')}</h2>
-      <div class="stepper">
-        <Button
-          variant="secondary"
-          onclick={() => {
-            isEndless = false;
-            roundCount = Math.max(1, roundCount - 1);
-          }}>−</Button
-        >
-        <span class="stepper-value">{isEndless ? '∞' : roundCount}</span>
-        <Button
-          variant="secondary"
-          onclick={() => {
-            isEndless = false;
-            roundCount = Math.min(10, roundCount + 1);
-          }}>+</Button
-        >
+      <Stepper
+        value={isEndless ? '∞' : roundCount}
+        ondecrement={() => {
+          isEndless = false;
+          roundCount = Math.max(1, roundCount - 1);
+        }}
+        onincrement={() => {
+          isEndless = false;
+          roundCount = Math.min(10, roundCount + 1);
+        }}
+        decrementLabel={$t('setup.rounds.fewer')}
+        incrementLabel={$t('setup.rounds.more')}
+      >
         <Chip on={isEndless} onclick={() => (isEndless = !isEndless)}
           >{$t('setup.rounds.endless')}</Chip
         >
-      </div>
+      </Stepper>
 
       <details class="advanced">
         <summary>{$t('setup.advanced')}</summary>
         <label class="select-field">
           <span class="select-label">{$t('setup.validation')}</span>
-          <select class="native-select" bind:value={validation}>
+          <Select bind:value={validation}>
             <option value="bundled">{$t('setup.validation.bundled')}</option>
             <option value="hybrid">{$t('setup.validation.hybrid')}</option>
             <option value="dictionary">{$t('setup.validation.dictionary')}</option>
             <option value="vote">{$t('setup.validation.vote')}</option>
             <option value="none">{$t('setup.validation.none')}</option>
-          </select>
+          </Select>
         </label>
         <label class="select-field">
           <span class="select-label">{$t('setup.language')}</span>
-          <select
-            class="native-select"
-            bind:value={gameLanguage}
-            onchange={() => uiLanguage.set(gameLanguage)}
-          >
+          <Select bind:value={gameLanguage} onchange={(code) => uiLanguage.set(code)}>
             {#each availablePacks() as p (p.code)}
               <option value={p.code}>{p.name}</option>
             {/each}
-          </select>
+          </Select>
         </label>
         <div class="toggle-field">
           <span class="select-label">{$t('setup.online')}</span>
@@ -785,8 +804,8 @@
     background: none;
     border: none;
     padding: var(--space-1);
-    min-inline-size: 48px;
-    min-block-size: 48px;
+    min-inline-size: var(--size-touch);
+    min-block-size: var(--size-touch);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -807,8 +826,8 @@
     padding: var(--space-1);
   }
   .player-remove {
-    min-inline-size: 48px;
-    min-block-size: 48px;
+    min-inline-size: var(--size-touch);
+    min-block-size: var(--size-touch);
     border: none;
     border-radius: var(--radius-md);
     background: transparent;
@@ -832,7 +851,7 @@
     margin-block-end: var(--space-4);
   }
   .emoji-option {
-    min-block-size: 48px;
+    min-block-size: var(--size-touch);
     font-size: var(--font-size-h1);
     background: var(--color-bg);
     border: var(--border-width) solid var(--color-border);
@@ -852,6 +871,16 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
+  }
+  .profile-check {
+    inline-size: 22px; /* design-ignore: matches the chip's 22px Avatar so picking doesn't shift */
+    block-size: 22px; /* design-ignore: matches the chip's 22px Avatar */
+    border-radius: var(--radius-pill);
+    background: var(--color-on-primary);
+    color: var(--color-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .roster-chip {
     display: inline-flex;
@@ -888,7 +917,7 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
     padding: var(--space-4);
-    min-block-size: 48px;
+    min-block-size: var(--size-touch);
     cursor: pointer;
     transition: border-color var(--duration-fast) var(--easing-standard);
   }
@@ -916,8 +945,8 @@
     gap: var(--space-1);
   }
   .chip-remove {
-    min-inline-size: 44px;
-    min-block-size: 44px;
+    min-inline-size: var(--size-touch-chip);
+    min-block-size: var(--size-touch-chip);
     border: none;
     border-radius: var(--radius-pill);
     background: transparent;
@@ -936,18 +965,6 @@
   .add-category :global(.field) {
     flex: 1 1 12rem;
     min-inline-size: 12rem;
-  }
-  .stepper {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-  .stepper-value {
-    font-size: var(--font-size-h1);
-    font-weight: var(--font-weight-display);
-    font-variant-numeric: tabular-nums;
-    min-inline-size: 2ch;
-    text-align: center;
   }
   .advanced {
     margin-block-start: var(--space-2);
@@ -971,17 +988,6 @@
     font-size: var(--font-size-small);
     color: var(--color-muted);
     margin-block-end: var(--space-1);
-  }
-  .native-select {
-    inline-size: 100%;
-    min-block-size: 48px;
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-weight: var(--font-weight-body);
-    font-family: inherit;
-    padding-inline: var(--space-4);
   }
   .section-hint {
     color: var(--color-muted);
@@ -1037,5 +1043,33 @@
     font-size: var(--font-size-small);
     text-align: center;
     margin-block-end: var(--space-2);
+  }
+  /* Hosting on a big screen: the lobby is read and scanned from across the
+     room, so the code and QR take the stage. (A phone host keeps them small —
+     its players are right next to it.) */
+  @media (min-width: 601px) {
+    .code-card {
+      gap: var(--space-3);
+      padding: var(--space-5);
+    }
+    .code-card .code-label {
+      font-size: var(--font-size-h2);
+    }
+    .room-code {
+      font-size: calc(var(--font-size-display) * 2.2);
+    }
+    .qr {
+      inline-size: min(320px, 100%);
+      block-size: auto;
+      aspect-ratio: 1;
+    }
+    .joined-count {
+      font-size: var(--font-size-h2);
+    }
+    .roster-chip {
+      font-size: var(--font-size-h2);
+      padding-block: var(--space-2);
+      padding-inline: var(--space-4);
+    }
   }
 </style>

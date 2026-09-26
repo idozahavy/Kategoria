@@ -52,3 +52,19 @@ export async function fileToAvatar(file: File): Promise<string | null> {
     return null; // not a decodable image — caller just keeps the old avatar
   }
 }
+
+/** How many --color-player-N tokens exist. */
+const PLAYER_COLOR_COUNT = 8;
+
+/**
+ * A stable player color (1..8) for a leaderboard name key: the same person
+ * keeps one color however the ranking shifts (FNV-1a hash of the key).
+ */
+export function colorIndexForKey(key: string): number {
+  let hash = 0x811c9dc5;
+  for (const ch of key) {
+    hash ^= ch.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return (hash % PLAYER_COLOR_COUNT) + 1;
+}

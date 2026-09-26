@@ -1,5 +1,14 @@
 import { getPack } from './i18n';
-import type { CategoryDef, GameSettings, GameState, PlayerDef, RoundState, Screen } from './types';
+import type {
+  CategoryDef,
+  GameSettings,
+  GameState,
+  PlayerDef,
+  RecordedResult,
+  RoundState,
+  Screen,
+  StatsChange,
+} from './types';
 
 export const DEFAULT_CATEGORY_IDS = ['animal', 'food', 'city', 'name', 'object'] as const;
 
@@ -52,10 +61,20 @@ export function drawWeighted<T>(pool: readonly T[], uses: (item: T) => number): 
   return pool[pool.length - 1];
 }
 
+/**
+ * Classic games (every category each round) never repeat a letter until the
+ * whole alphabet has come up — a repeat there means re-typing last round's
+ * sheet. Past that point, and in single mode (a fresh category each round
+ * makes a repeat a new puzzle), repeats are only made rarer.
+ */
 export function drawLetter(state: GameState): string {
   const letters = getPack(state.settings.language).letters;
   const counts = new Map<string, number>();
   for (const l of state.usedLetters) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const unused = letters.filter((l) => !counts.has(l));
+  if (state.settings.mode === 'classic' && unused.length > 0) {
+    return unused[Math.floor(Math.random() * unused.length)] ?? 'A';
+  }
   return drawWeighted(letters, (l) => counts.get(l) ?? 0) ?? 'A';
 }
 
@@ -116,19 +135,83 @@ export function normalizeWord(word: string): string {
   return word.trim().toLocaleLowerCase();
 }
 
-/** Does the word start with the round letter (locale-insensitive)? */
+/**
+ * Normalized word with accents and other combining marks removed (é→e, ё→е,
+ * Hebrew niqqud), and every Arabic alef form (أ إ آ ٱ) read as plain ا — kids
+ * and keyboards write these interchangeably, and the round letters carry none.
+ */
+export function foldWord(word: string): string {
+  return normalizeWord(word)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/ٱ/gu, 'ا')
+    .normalize('NFC');
+}
+
+/** Does the word start with the round letter (case- and accent-insensitive)? */
 export function matchesLetter(word: string, letter: string): boolean {
-  return normalizeWord(word).startsWith(letter.toLocaleLowerCase());
+  return foldWord(word).startsWith(foldWord(letter));
+}
+
+/** Why a word fails the round's basic rules before any lookup, or null when it passes them. */
+export type LetterRuleFailure = 'short' | 'letter';
+
+/** The rules every check applies first: a lone letter is never a word, and it must start with the letter. */
+export function letterRuleFailure(word: string, letter: string): LetterRuleFailure | null {
+  const trimmed = word.trim();
+  if (trimmed.length < 2) return 'short';
+  if (!matchesLetter(trimmed, letter)) return 'letter';
+  return null;
 }
 
 /**
- * Finish rank per player for speed scoring: 0 = fastest. Players without a
- * recorded time (bots, never-submitted guests) all share the last rank.
+ * Why an answer scored nothing, for the results badge. Only the letter rules
+ * reject a word automatically; any other rejection came from the group vote.
+ */
+export function invalidReason(word: string, letter: string): LetterRuleFailure | 'vote' {
+  return letterRuleFailure(word, letter) ?? 'vote';
+}
+
+/** Leading definite articles that don't make a different word: Hebrew ה, Arabic ال. */
+const ARTICLES = [
+  { prefix: 'ال', minRest: 2 },
+  { prefix: 'ה', minRest: 2 },
+];
+
+/**
+ * Comparison keys for "did two players write the same word": folded, with
+ * spaces and punctuation dropped (ice cream = ice-cream), plus the form
+ * without a leading article (הכלב = כלב, الأسد = أسد).
+ */
+export function wordKeys(word: string): string[] {
+  const base = foldWord(word).replace(/[\s\p{P}\p{S}]/gu, '');
+  const keys = [base];
+  for (const { prefix, minRest } of ARTICLES) {
+    if (base.startsWith(prefix) && base.length - prefix.length >= minRest) {
+      keys.push(base.slice(prefix.length));
+    }
+  }
+  return keys;
+}
+
+/** Same word for scoring: any comparison key in common. */
+export function isSameWord(a: string, b: string): boolean {
+  const keysA = wordKeys(a);
+  return wordKeys(b).some((k) => k !== '' && keysA.includes(k));
+}
+
+/**
+ * Finish rank per player for speed scoring: 0 = fastest. Only a player with at
+ * least one word still standing earns a rank — racing to submit an empty or
+ * all-wrong sheet must not shave points off everyone else. Players without a
+ * rank (no time, no valid word, bots) all share the last rank.
  */
 function speedRanks(state: GameState, round: RoundState): Map<string, number> {
   const times = round.finishTimes ?? {};
+  const hasValidWord = (playerId: string): boolean =>
+    round.answers.some((a) => a.playerId === playerId && a.word !== '' && a.status !== 'invalid');
   const ranked = state.players
-    .filter((p) => times[p.id] !== undefined)
+    .filter((p) => times[p.id] !== undefined && hasValidWord(p.id))
     .sort((a, b) => (times[a.id] ?? 0) - (times[b.id] ?? 0));
   const ranks = new Map<string, number>();
   ranked.forEach((p, i) => ranks.set(p.id, i));
@@ -159,10 +242,7 @@ export function scoreRound(state: GameState, round: RoundState): void {
         continue;
       }
       const sameWord = inCategory.filter(
-        (o) =>
-          o !== answer &&
-          o.status !== 'invalid' &&
-          normalizeWord(o.word) === normalizeWord(answer.word),
+        (o) => o !== answer && o.status !== 'invalid' && isSameWord(o.word, answer.word),
       );
       if (scoring === 'unique' && sameWord.length > 0) {
         answer.status = 'shared';
@@ -191,6 +271,60 @@ export function totalScores(state: GameState): Map<string, number> {
     }
   }
   return totals;
+}
+
+/** Points each player earned in one round — the "+N" next to their total. */
+export function roundPoints(state: GameState, round: RoundState): Map<string, number> {
+  const points = new Map<string, number>();
+  for (const p of state.players) points.set(p.id, 0);
+  for (const a of round.answers) points.set(a.playerId, (points.get(a.playerId) ?? 0) + a.points);
+  return points;
+}
+
+/**
+ * Players holding the best total. Nobody wins while nobody has scored (a 0–0
+ * table has no winner, and no crowns).
+ */
+export function winnerIds(state: GameState): string[] {
+  const totals = totalScores(state);
+  const top = Math.max(0, ...totals.values());
+  if (top <= 0) return [];
+  return state.players.filter((p) => totals.get(p.id) === top).map((p) => p.id);
+}
+
+/** A win on the family leaderboard needs someone to beat — solo games never count one. */
+export function countsAsWin(state: GameState, playerId: string): boolean {
+  return state.players.length > 1 && winnerIds(state).includes(playerId);
+}
+
+/** Each human player's result as it stands now — what the leaderboard should hold for this game. */
+export function currentResults(state: GameState): RecordedResult[] {
+  const totals = totalScores(state);
+  return state.players
+    .filter((p) => p.isBot !== true)
+    .map((p) => ({ playerId: p.id, points: totals.get(p.id) ?? 0, won: countsAsWin(state, p.id) }));
+}
+
+/**
+ * What ending this game adds to lifetime stats. The first end adds a whole
+ * game; a revived game ("one more round") ending again only moves points and
+ * wins by the difference from what it recorded last time.
+ */
+export function statsChanges(state: GameState): StatsChange[] {
+  // Saved before results were tracked: already counted, and no baseline to diff.
+  if (state.hasRecordedStats === true && state.recordedResults === undefined) return [];
+  const previous = new Map((state.recordedResults ?? []).map((r) => [r.playerId, r]));
+  return currentResults(state)
+    .map((now) => {
+      const before = previous.get(now.playerId);
+      return {
+        playerId: now.playerId,
+        games: before ? 0 : 1,
+        wins: Number(now.won) - Number(before?.won ?? false),
+        points: now.points - (before?.points ?? 0),
+      };
+    })
+    .filter((c) => c.games !== 0 || c.wins !== 0 || c.points !== 0);
 }
 
 /**

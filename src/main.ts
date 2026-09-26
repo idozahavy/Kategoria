@@ -1,4 +1,7 @@
 import '@fontsource-variable/nunito';
+// Hebrew + Arabic glyphs (Nunito has none); later in the font stack, so the
+// browser only downloads these subsets when that script is on screen.
+import '@fontsource-variable/rubik';
 import './app.css';
 
 import { mount } from 'svelte';

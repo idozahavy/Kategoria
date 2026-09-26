@@ -4,8 +4,18 @@
   let {
     open = false,
     onclose,
+    focusFirst = true,
     children,
-  }: { open?: boolean; onclose?: () => void; children: Snippet } = $props();
+  }: {
+    open?: boolean;
+    onclose?: () => void;
+    /**
+     * Focus the first control on open. Off for a question with no safe
+     * default (a vote): the dialog itself takes focus, so Enter picks nothing.
+     */
+    focusFirst?: boolean;
+    children: Snippet;
+  } = $props();
 
   let modalEl: HTMLDivElement | undefined = $state();
   let previouslyFocused: HTMLElement | null = null;
@@ -23,7 +33,7 @@
     previouslyFocused = document.activeElement as HTMLElement | null;
     const el = modalEl;
     if (el) {
-      const first = focusablesIn(el)[0];
+      const first = focusFirst ? focusablesIn(el)[0] : undefined;
       (first ?? el).focus();
     }
     return () => {

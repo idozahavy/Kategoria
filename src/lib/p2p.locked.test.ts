@@ -47,6 +47,7 @@ const roundMsg = {
   roundCount: 3,
   letter: 'B',
   seconds: 60,
+  totalSeconds: 60,
   categories: [{ id: 'animal', label: 'Animal', emoji: '🐾' }],
 };
 
@@ -123,7 +124,11 @@ describe('host room after lock', () => {
     const ida = connectAndHello(peer, 'Ida');
     room.lock();
     room.broadcast(roundMsg);
-    const scores = { type: 'scores' as const, rows: [{ name: 'Ida', score: 10 }], winner: 'Ida' };
+    const scores = {
+      type: 'scores' as const,
+      rows: [{ name: 'Ida', score: 10, colorIndex: 1, delta: 0, isWinner: true }],
+      winner: 'Ida',
+    };
     room.broadcast(scores);
     ida.conn.emit('close');
     const back = connectAndHello(peer, 'Ida');
@@ -141,6 +146,7 @@ describe('host room after lock', () => {
       voteId: 'v-1',
       word: 'blorp',
       category: { id: 'animal', label: 'Animal', emoji: '🐾' },
+      ownerIds: [],
     };
     room.broadcast(vote);
     ida.conn.emit('close');
@@ -175,7 +181,8 @@ describe('host room after lock', () => {
           ],
         },
       ],
-      standings: [{ name: 'Ida', score: 10 }],
+      standings: [{ name: 'Ida', score: 10, colorIndex: 1, delta: 10, isWinner: false }],
+      isUniqueScoring: true,
     };
     room.broadcast(results);
     ida.conn.emit('close');

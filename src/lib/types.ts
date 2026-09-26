@@ -129,8 +129,31 @@ export interface GameState {
   currentRound: number;
   usedLetters: string[];
   status: GameStatus;
-  /** Lifetime stats already landed — a game revived with "one more round" isn't counted twice. */
+  /**
+   * Legacy flag from saves made before `recordedResults`: stats landed, but
+   * what they were is unknown, so a revived game can't correct them.
+   */
   hasRecordedStats?: boolean;
+  /**
+   * What this game already added to each human player's lifetime stats. A game
+   * revived with "one more round" only adds the difference when it ends again.
+   */
+  recordedResults?: RecordedResult[];
+}
+
+/** One player's contribution from a finished game to their lifetime stats. */
+export interface RecordedResult {
+  playerId: string;
+  points: number;
+  won: boolean;
+}
+
+/** How much a game end moves one player's lifetime stats (all may be negative except games). */
+export interface StatsChange {
+  playerId: string;
+  games: number;
+  wins: number;
+  points: number;
 }
 
 /** Summary row shown in the Resume list (cheap to read, no full state). */

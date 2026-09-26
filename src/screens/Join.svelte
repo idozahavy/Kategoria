@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
 
   import { AVATAR_EMOJI, fileToAvatar } from '../lib/avatar';
-  import { matchesLetter } from '../lib/game';
+  import { invalidReason, matchesLetter } from '../lib/game';
   import { t } from '../lib/i18n';
   import {
     type GuestSession,
@@ -13,15 +13,23 @@
     PING_INTERVAL_MS,
   } from '../lib/p2p';
   import { hasCamera, roomCodeFromScan, startQrScan } from '../lib/qrscan';
+  import { playFanfare, vibrate } from '../lib/sound';
   import { screen } from '../lib/stores';
+  import { TIME_UP_BUZZ, timerBuzz } from '../lib/timer';
+  import type { AnswerStatus } from '../lib/types';
+  import AnswerRow from '../lib/ui/AnswerRow.svelte';
   import Avatar from '../lib/ui/Avatar.svelte';
   import Button from '../lib/ui/Button.svelte';
   import Card from '../lib/ui/Card.svelte';
+  import Confetti from '../lib/ui/Confetti.svelte';
   import LetterTile from '../lib/ui/LetterTile.svelte';
   import Modal from '../lib/ui/Modal.svelte';
+  import ScoreRow from '../lib/ui/ScoreRow.svelte';
+  import Spinner from '../lib/ui/Spinner.svelte';
   import TextInput from '../lib/ui/TextInput.svelte';
   import TimerPill from '../lib/ui/TimerPill.svelte';
   import TopBar from '../lib/ui/TopBar.svelte';
+  import WinnerHero from '../lib/ui/WinnerHero.svelte';
   import type { VoteChoice } from '../lib/vote';
 
   type GuestPhase =
@@ -31,9 +39,13 @@
     | 'entry'
     | 'waiting'
     | 'vote'
+    /** A vote on the guest's own word: shown, but not theirs to decide. */
+    | 'vote-own'
     | 'voted'
     | 'results'
     | 'scores'
+    /** The connection dropped mid-game; retrying on its own. */
+    | 'reconnecting'
     | 'error';
   type RoundMsg = Extract<HostMessage, { type: 'round' }>;
   type VoteMsg = Extract<HostMessage, { type: 'vote' }>;
@@ -106,7 +118,6 @@
   const votedIds = new Set<string>();
   let answers = $state<Record<string, string>>({});
   let submitted = $state(false);
-  let showSubmitConfirm = $state(false);
   let timeLeft = $state<number | null>(null);
   // Wall-clock anchor for the countdown, so a throttled background tab
   // doesn't slow the timer down (the host's clock keeps running regardless).
@@ -128,29 +139,62 @@
     pingTimer = null;
   }
 
+  /** Waits between automatic reconnect attempts after the connection drops. */
+  const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 15000];
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function stopReconnect(): void {
+    if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
   onDestroy(() => {
     stopPing();
+    stopReconnect();
+    session?.onClose(null);
     session?.close();
     session = null;
   });
+
+  /** The answers payload last sent, so a reconnect can resend it. */
+  let sentAnswers: Record<string, string> | null = null;
 
   function handleMessage(msg: HostMessage): void {
     if (msg.type === 'roster') {
       roster = msg.names;
     } else if (msg.type === 'round') {
+      // The same round again is a replay (we reconnected, or the host
+      // reloaded): keep what was typed, and don't reopen a sent sheet.
+      const isReplay =
+        round?.roundIndex === msg.roundIndex && (phase === 'entry' || phase === 'waiting');
       round = msg;
       roundReceivedAt = Date.now();
-      answers = {};
-      submitted = false;
-      showSubmitConfirm = false;
+      if (isReplay && submitted) {
+        // The host may have missed the first send — sending again is harmless.
+        if (sentAnswers)
+          session?.send({ type: 'answers', roundIndex: msg.roundIndex, answers: sentAnswers });
+        phase = 'waiting';
+        return;
+      }
+      if (!isReplay) {
+        answers = {};
+        submitted = false;
+        sentAnswers = null;
+      }
       phase = 'entry';
     } else if (msg.type === 'vote') {
       vote = msg;
-      phase = votedIds.has(msg.voteId) ? 'voted' : 'vote';
+      if (msg.ownerIds.includes(playerId)) phase = 'vote-own';
+      else phase = votedIds.has(msg.voteId) ? 'voted' : 'vote';
     } else if (msg.type === 'results') {
       results = msg;
       phase = 'results';
     } else if (msg.type === 'scores') {
+      // A replay after a reconnect doesn't celebrate twice.
+      if (phase !== 'scores' && msg.rows.some((r) => r.isWinner)) {
+        playFanfare();
+        vibrate(200);
+      }
       scores = msg;
       phase = 'scores';
     } else if (msg.type === 'ended') {
@@ -163,24 +207,61 @@
     }
   }
 
+  /** Take over a fresh connection: messages, heartbeat, and drop handling. */
+  function wireSession(s: GuestSession): void {
+    session = s;
+    playerId = s.playerId;
+    rememberSession();
+    s.onMessage(handleMessage);
+    s.onClose(() => {
+      stopPing();
+      session = null;
+      if (phase === 'scores' || phase === 'error' || phase === 'form') return;
+      void reconnect();
+    });
+    startPing();
+  }
+
+  /**
+   * A dropped connection (flaky Wi-Fi, the host reloading) retries on its own
+   * with growing pauses. The same device reclaims its seat, and the host
+   * replays the current screen; only when every attempt fails does the player
+   * see the error.
+   */
+  async function reconnect(): Promise<void> {
+    const resumeAt = phase === 'reconnecting' || phase === 'connecting' ? 'lobby' : phase;
+    phase = 'reconnecting';
+    for (const delay of RECONNECT_DELAYS_MS) {
+      await new Promise<void>((resolve) => {
+        reconnectTimer = setTimeout(resolve, delay);
+      });
+      reconnectTimer = null;
+      if (phase !== 'reconnecting') return; // the player left meanwhile
+      try {
+        const s = await joinRoom(code, name.trim(), avatar);
+        if (phase !== 'reconnecting') {
+          s.close();
+          return;
+        }
+        wireSession(s);
+        // Back where we were until the host's replay says otherwise.
+        phase = resumeAt;
+        return;
+      } catch {
+        // host not reachable yet (maybe reloading) — wait and try again
+      }
+    }
+    errorKey = 'join.error.disconnected';
+    phase = 'error';
+  }
+
   async function join(): Promise<void> {
     codeError = normalizeRoomCode(code) === '' ? $t('join.error.emptyCode') : '';
     nameError = name.trim() === '' ? $t('join.error.emptyName') : '';
     if (codeError !== '' || nameError !== '') return;
     phase = 'connecting';
     try {
-      session = await joinRoom(code, name.trim(), avatar);
-      playerId = session.playerId;
-      rememberSession();
-      session.onMessage(handleMessage);
-      session.onClose(() => {
-        stopPing();
-        if (phase !== 'scores' && phase !== 'error') {
-          errorKey = 'join.error.disconnected';
-          phase = 'error';
-        }
-      });
-      startPing();
+      wireSession(await joinRoom(code, name.trim(), avatar));
       phase = 'lobby';
     } catch (e) {
       errorKey =
@@ -193,16 +274,12 @@
 
   function submitAnswers(): void {
     const r = round;
-    showSubmitConfirm = false;
     if (!session || !r || submitted) return;
     submitted = true;
-    session.send({
-      type: 'answers',
-      roundIndex: r.roundIndex,
-      answers: Object.fromEntries(
-        Object.entries(answers).map(([id, w]) => [id, w.slice(0, MAX_ANSWER_LENGTH)]),
-      ),
-    });
+    sentAnswers = Object.fromEntries(
+      Object.entries(answers).map(([id, w]) => [id, w.slice(0, MAX_ANSWER_LENGTH)]),
+    );
+    session.send({ type: 'answers', roundIndex: r.roundIndex, answers: sentAnswers });
     phase = 'waiting';
   }
 
@@ -214,19 +291,12 @@
     phase = 'voted';
   }
 
-  /** Lock the words in — but confirm first when some categories are still blank. */
-  function requestSubmit(): void {
-    const hasEmpty = (round?.categories ?? []).some((c) => (answers[c.id] ?? '').trim() === '');
-    if (hasEmpty) showSubmitConfirm = true;
-    else submitAnswers();
-  }
-
-  /** Enter hops to the next category's input; on the last one it asks to finish. */
+  /** Enter hops to the next category's input; on the last one it sends the words. */
   function onAnswerKeydown(e: KeyboardEvent, index: number): void {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     if (index >= (round?.categories.length ?? 0) - 1) {
-      requestSubmit();
+      submitAnswers();
       return;
     }
     const inputs = document.querySelectorAll<HTMLInputElement>('.cards .inp');
@@ -242,11 +312,17 @@
       return;
     }
     const startedAt = roundReceivedAt;
+    const total = round?.totalSeconds ?? seconds;
+    let lastBuzzAt: number | null = null;
     const tick = (): void => {
       const left = seconds - Math.floor((Date.now() - startedAt) / 1000);
       timeLeft = Math.max(left, 0);
+      const buzz = timerBuzz(left, total);
+      if (buzz > 0 && lastBuzzAt !== left) vibrate(buzz);
+      lastBuzzAt = left;
       if (left <= 0) {
         clearInterval(id);
+        vibrate(TIME_UP_BUZZ);
         submitAnswers();
       }
     };
@@ -259,6 +335,7 @@
 
   function leave(): void {
     stopPing();
+    stopReconnect();
     forgetSession();
     session?.onClose(null);
     session?.close();
@@ -268,6 +345,7 @@
 
   function retry(): void {
     stopPing();
+    stopReconnect();
     session?.onClose(null);
     session?.close();
     session = null;
@@ -343,10 +421,11 @@
       : '',
   );
 
-  function statusLabel(status: string): string {
-    if (status === 'valid') return $t('review.unique');
+  function statusLabel(status: AnswerStatus, word: string): string {
+    if (status === 'valid')
+      return $t(results?.isUniqueScoring === false ? 'review.good' : 'review.unique');
     if (status === 'shared') return $t('review.shared');
-    return $t('review.invalid');
+    return $t(`review.invalid.${invalidReason(word, results?.letter ?? '')}`);
   }
 </script>
 
@@ -386,10 +465,9 @@
       <Button variant="accent" block onclick={() => void join()}>{$t('join.go')}</Button>
     </div>
   {:else if phase === 'connecting'}
-    <div class="center">
-      <div class="spinner" role="status" aria-label={$t('join.connecting')}></div>
-      <p class="muted">{$t('join.connecting')}</p>
-    </div>
+    <Spinner label={$t('join.connecting')} />
+  {:else if phase === 'reconnecting'}
+    <Spinner emoji="📶" label={$t('join.reconnecting')} />
   {:else if phase === 'lobby'}
     <div class="center">
       <div class="emoji">🎉</div>
@@ -404,7 +482,10 @@
     <div class="letter-row">
       <LetterTile letter={round.letter} />
       {#if round.seconds}
-        <TimerPill seconds={timeLeft ?? round.seconds} />
+        <TimerPill
+          seconds={timeLeft ?? round.seconds}
+          total={round.totalSeconds ?? round.seconds}
+        />
       {/if}
     </div>
     <p class="round-title">{roundTitle}</p>
@@ -428,7 +509,7 @@
         </Card>
       {/each}
     </div>
-    <Button variant="primary" block disabled={submitted} onclick={requestSubmit}
+    <Button variant="primary" block disabled={submitted} onclick={submitAnswers}
       >{$t('round.done')}</Button
     >
   {:else if phase === 'waiting'}
@@ -447,6 +528,12 @@
         <Button variant="danger" block onclick={() => castVote('no')}>{$t('review.vote.no')}</Button
         >
       </div>
+    </div>
+  {:else if phase === 'vote-own' && vote}
+    <div class="center">
+      <div class="emoji">✍️</div>
+      <p class="big">{vote.category.emoji} {vote.word}</p>
+      <p class="muted">{$t('join.vote.yours')}</p>
     </div>
   {:else if phase === 'voted'}
     <div class="center">
@@ -467,22 +554,14 @@
           </div>
           <ul class="answer-list">
             {#each cat.answers as a (a.playerId)}
-              <li class="answer-row" class:me={a.playerId === playerId}>
-                <span class="player-name">{a.name}</span>
-                {#if a.word === ''}
-                  <span class="word-empty">—</span>
-                {:else}
-                  <span class="word" class:invalid={a.status === 'invalid'}>{a.word}</span>
-                  <span
-                    class="badge"
-                    class:success={a.status === 'valid'}
-                    class:warning={a.status === 'shared'}
-                    class:muted={a.status === 'invalid'}
-                  >
-                    {statusLabel(a.status)} · {a.points}
-                  </span>
-                {/if}
-              </li>
+              <AnswerRow
+                name={a.name}
+                word={a.word}
+                status={a.status}
+                points={a.points}
+                label={statusLabel(a.status, a.word)}
+                isMe={a.playerId === playerId}
+              />
             {/each}
           </ul>
         </Card>
@@ -491,10 +570,14 @@
         <p class="standings-title">🏆 {$t('review.standings')}</p>
         <div class="score-rows">
           {#each results.standings as row (row.name)}
-            <div class="score-row">
-              <span class="score-name">{row.name}</span>
-              <b class="score-value">{row.score}</b>
-            </div>
+            <ScoreRow
+              name={row.name}
+              score={row.score}
+              from={row.score - row.delta}
+              delta={row.delta}
+              colorIndex={row.colorIndex}
+              avatar={row.avatar}
+            />
           {/each}
         </div>
       </Card>
@@ -505,24 +588,31 @@
       </p>
     </div>
   {:else if phase === 'scores' && scores}
-    <!-- The host sends the winners pre-joined, so count the tie here to pick the plural. -->
-    {@const rows = scores.rows}
-    {@const tiedCount = rows.filter((r) => r.score === (rows[0]?.score ?? 0)).length}
+    {@const winners = scores.rows.filter((r) => r.isWinner)}
+    {#if winners.length > 0}
+      <Confetti />
+    {/if}
     <div class="content">
-      <h1 class="scores-title">{$t('score.title')}</h1>
+      <WinnerHero
+        {winners}
+        text={winners.length === 0
+          ? $t('score.noWinner')
+          : $t(winners.length > 1 ? 'score.winners' : 'score.winner').replace(
+              '{name}',
+              scores.winner,
+            )}
+      />
       <div class="score-rows">
         {#each scores.rows as row (row.name)}
-          <Card>
-            <div class="score-row">
-              <span class="score-name">{row.name}</span>
-              <b class="score-value">{row.score}</b>
-            </div>
-          </Card>
+          <ScoreRow
+            name={row.name}
+            score={row.score}
+            from={0}
+            colorIndex={row.colorIndex}
+            avatar={row.avatar}
+          />
         {/each}
       </div>
-      <p class="big">
-        {$t(tiedCount > 1 ? 'score.winners' : 'score.winner').replace('{name}', scores.winner)}
-      </p>
       <Button variant="primary" block onclick={leave}>{$t('score.home')}</Button>
     </div>
   {:else if phase === 'error'}
@@ -536,16 +626,6 @@
     </div>
   {/if}
 </div>
-
-<Modal open={showSubmitConfirm} onclose={() => (showSubmitConfirm = false)}>
-  <p class="modal-text">{$t('round.submitConfirm')}</p>
-  <div class="modal-actions">
-    <Button variant="secondary" block onclick={() => (showSubmitConfirm = false)}
-      >{$t('common.cancel')}</Button
-    >
-    <Button variant="primary" block onclick={submitAnswers}>{$t('round.done')}</Button>
-  </div>
-</Modal>
 
 <Modal open={scannerOpen} onclose={() => (scannerOpen = false)}>
   <p class="avatar-title">{$t('join.scan')}</p>
@@ -665,8 +745,8 @@
     background: none;
     border: none;
     padding: var(--space-1);
-    min-inline-size: 48px;
-    min-block-size: 48px;
+    min-inline-size: var(--size-touch);
+    min-block-size: var(--size-touch);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -686,14 +766,6 @@
     border-radius: var(--radius-pill);
     padding: var(--space-1);
   }
-  .modal-text {
-    font-weight: var(--font-weight-subheading);
-    margin-block-end: var(--space-4);
-  }
-  .modal-actions {
-    display: flex;
-    gap: var(--space-3);
-  }
   .avatar-title {
     font-size: var(--font-size-h2);
     font-weight: var(--font-weight-heading);
@@ -706,7 +778,7 @@
     margin-block-end: var(--space-4);
   }
   .emoji-option {
-    min-block-size: 48px;
+    min-block-size: var(--size-touch);
     font-size: var(--font-size-h1);
     background: var(--color-bg);
     border: var(--border-width) solid var(--color-border);
@@ -771,97 +843,17 @@
     gap: var(--space-2);
     list-style: none;
   }
-  .answer-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .answer-row.me {
-    border-inline-start: var(--border-edge-width) solid var(--color-primary);
-    padding-inline-start: var(--space-2);
-  }
-  .player-name {
-    font-weight: var(--font-weight-subheading);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .word-empty {
-    color: var(--color-muted);
-  }
-  .word.invalid {
-    color: var(--color-muted);
-    text-decoration: line-through;
-  }
-  .badge {
-    border-radius: var(--radius-pill);
-    padding-block: var(--space-1);
-    padding-inline: var(--space-3);
-    font-weight: var(--font-weight-subheading);
-    font-size: var(--font-size-small);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .badge.success {
-    background: var(--color-success);
-    color: var(--color-on-success);
-  }
-  .badge.warning {
-    background: var(--color-warning);
-    color: var(--color-on-warning);
-  }
-  .badge.muted {
-    background: var(--color-border);
-    color: var(--color-muted);
-  }
   .standings-title {
     font-weight: var(--font-weight-subheading);
     margin-block-end: var(--space-2);
-  }
-  .scores-title {
-    font-size: var(--font-size-h1);
-    font-weight: var(--font-weight-display);
-    text-align: center;
   }
   .score-rows {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
   }
-  .score-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
-  .score-name {
-    font-weight: var(--font-weight-subheading);
-  }
-  .score-value {
-    font-variant-numeric: tabular-nums;
-    font-size: var(--font-size-h2);
-  }
   .error-actions {
     display: flex;
     gap: var(--space-2);
-  }
-  .spinner {
-    inline-size: 40px;
-    block-size: 40px;
-    border-radius: var(--radius-pill);
-    border: 5px solid var(--color-border);
-    border-block-start-color: var(--color-primary);
-    animation: spin 800ms linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
   }
 </style>

@@ -1,5 +1,5 @@
 import { addLearnedWord, getLearnedWords, removeLearnedWord } from './db';
-import { matchesLetter, normalizeWord } from './game';
+import { foldWord, letterRuleFailure, normalizeWord } from './game';
 import { getPack } from './i18n';
 import type { ValidationMode } from './types';
 import { ensureWords, getWords } from './words';
@@ -43,8 +43,7 @@ export interface WordCheckOptions {
 export async function checkWord(word: string, options: WordCheckOptions): Promise<WordVerdict> {
   const { categoryId, letter, language, mode, solo = false, wikidata = true } = options;
   const trimmed = word.trim();
-  if (trimmed.length < 2) return 'invalid'; // a lone letter is never a word
-  if (!matchesLetter(trimmed, letter)) return 'invalid';
+  if (letterRuleFailure(trimmed, letter) !== null) return 'invalid';
   if (solo || mode === 'none') return 'valid';
   if (mode === 'vote') return 'vote';
 
@@ -70,11 +69,10 @@ export async function checkWord(word: string, options: WordCheckOptions): Promis
       // 'error' (offline/slow/unmapped) — fall through to the existence check.
     }
     const known = await inPublicDictionary(trimmed, language);
-    if (known === 'known') {
-      // Remember it so future games validate instantly and offline.
-      void learnWord(language, categoryId, trimmed);
-      return 'valid';
-    }
+    // Existence alone says nothing about the category ("banana" is a real word,
+    // not an animal) — accept it for this round, but never learn it: only a
+    // category-fit hit or a group vote teaches the list.
+    if (known === 'known') return 'valid';
     if (known === 'unknown' && mode === 'dictionary') return 'vote';
   }
 
@@ -195,8 +193,18 @@ const MEDIA_SENSES = [
   'single',
   'film',
   'movie',
-  'tv series',
-  'television series',
+  // Any TV/print/art work: descriptions put adjectives between the words
+  // ("British television romantic drama series"), so single words, not phrases.
+  'television',
+  'TV',
+  'sitcom',
+  'miniseries',
+  'drama',
+  'comic',
+  'magazine',
+  'newspaper',
+  'painting',
+  'poem',
   'video game',
   'band',
   'novel',
@@ -225,7 +233,7 @@ const FACT_REJECT_NAME = new RegExp(`\\b(${MEDIA_SENSES.join('|')})\\b`, 'i');
  */
 const FACT_HINT: Record<string, RegExp> = {
   animal: /\b(animal|species|genus|mammal|bird|fish|reptile|amphibian|insect|arachnid|breed)\b/i,
-  food: /\b(food|dish|dessert|cuisine|snack|meal|edible|beverage|drink|bread|cheese|sauce)\b/i,
+  food: /\b(food|dish|dessert|cuisine|snack|meal|edible|beverage|drink|bread|cheese|sauce|fruit|vegetable)\b/i,
   city: /\b(city|town|village|municipality|capital|settlement|commune|borough|county seat)\b/i,
   country: /\b(country|sovereign state|nation|republic|kingdom|federation)\b/i,
   name: /\b(given name|surname|family name|male name|female name|personal name)\b/i,
@@ -243,6 +251,18 @@ const FACT_HINT: Record<string, RegExp> = {
  * media senses are dropped and a description that reads like the category wins
  * over the search engine's own ranking.
  */
+/**
+ * Wikidata descriptions are terse fragments, often with a second clause after
+ * a semicolon ("large metal pot for cooking…; hanging or standing"), and read
+ * as cut off. Keep the first clause and make it a sentence.
+ */
+export function tidyFact(description: string, language: string): string {
+  const clause = (description.split(/[;；؛]/u)[0] ?? '').trim().replace(/[,،:]+$/u, '');
+  if (clause === '') return description.trim();
+  const sentence = clause.charAt(0).toLocaleUpperCase(language) + clause.slice(1);
+  return /[.!?…。]$/u.test(sentence) ? sentence : `${sentence}.`;
+}
+
 export async function wordFact(
   word: string,
   language: string,
@@ -271,7 +291,8 @@ export async function wordFact(
     }
     const hint = categoryId === undefined ? undefined : FACT_HINT[categoryId];
     const preferred = hint === undefined ? undefined : candidates.find((d) => hint.test(d));
-    const fact = preferred ?? candidates[0] ?? null;
+    const raw = preferred ?? candidates[0];
+    const fact = raw === undefined ? null : tidyFact(raw, language);
     factCache.set(key, fact);
     return fact;
   } catch {
@@ -279,11 +300,23 @@ export async function wordFact(
   }
 }
 
-/** Lists must be loaded first via ensureWords(); unloaded languages match nothing. */
+/** Folded (accent-free) copies of the loaded lists, built on first lookup. */
+const foldedLists = new Map<string, Set<string>>();
+
+/**
+ * Lists must be loaded first via ensureWords(); unloaded languages match
+ * nothing. Accent-insensitive: "elephant" finds "éléphant", "اسد" finds "أسد".
+ */
 export function inBundledList(word: string, categoryId: string, language: string): boolean {
   const list = getWords(language)[categoryId];
   if (!list) return false;
-  return list.includes(normalizeWord(word));
+  const key = `${language}:${categoryId}`;
+  let folded = foldedLists.get(key);
+  if (!folded) {
+    folded = new Set(list.map(foldWord));
+    foldedLists.set(key, folded);
+  }
+  return folded.has(foldWord(word));
 }
 
 /**

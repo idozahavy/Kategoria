@@ -228,6 +228,10 @@ export function buildBaseVars(flat) {
   if ('border.width' in flat) vars['--border-width'] = flat['border.width'];
   if ('border.edge-width' in flat) vars['--border-edge-width'] = flat['border.edge-width'];
 
+  // Size (touch targets)
+  if ('size.touch' in flat) vars['--size-touch'] = flat['size.touch'];
+  if ('size.touch-chip' in flat) vars['--size-touch-chip'] = flat['size.touch-chip'];
+
   // Shadow
   if ('shadow.card' in flat) {
     const s = flat['shadow.card'];

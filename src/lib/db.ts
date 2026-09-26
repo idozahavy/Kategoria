@@ -1,6 +1,6 @@
 import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
 
-import type { GameState, PlayerProfile, SaveSummary } from './types';
+import type { GameState, PlayerProfile, SaveSummary, StatsChange } from './types';
 
 /** Words the app has confirmed over past games (dictionary hits, accepted votes). */
 interface LearnedEntry {
@@ -136,16 +136,16 @@ export async function touchProfile(name: string, avatar: string | undefined): Pr
   await d.put(PROFILE_STORE, profile);
 }
 
-/** Add one finished game to a player's lifetime stats. */
-export async function recordGameResult(name: string, points: number, won: boolean): Promise<void> {
+/** Apply a game's result (or a revived game's correction) to a player's lifetime stats. */
+export async function recordGameResult(name: string, change: StatsChange): Promise<void> {
   const key = profileKey(name);
   if (key === '') return;
   const d = await db();
   const profile = await d.get(PROFILE_STORE, key);
   if (!profile) return; // only players saved at game start are tracked
-  profile.gamesPlayed += 1;
-  if (won) profile.wins += 1;
-  profile.totalPoints += points;
+  profile.gamesPlayed += change.games;
+  profile.wins = Math.max(0, profile.wins + change.wins);
+  profile.totalPoints = Math.max(0, profile.totalPoints + change.points);
   profile.updatedAt = Date.now();
   await d.put(PROFILE_STORE, profile);
 }

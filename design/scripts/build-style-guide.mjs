@@ -66,6 +66,9 @@ cssParts.push(formatVarBlock({
   '--border-edge-width': baseVars['--border-edge-width'],
 }));
 cssParts.push('');
+cssParts.push('  /* --- size (touch targets) --- */');
+cssParts.push(formatVarBlock(Object.fromEntries(Object.entries(baseVars).filter(([k]) => k.startsWith('--size-')))));
+cssParts.push('');
 cssParts.push('  /* --- shadow --- */');
 cssParts.push(formatVarBlock({ '--shadow-card': baseVars['--shadow-card'] }));
 cssParts.push('');

@@ -3,17 +3,27 @@ import { webcrypto } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  countsAsWin,
   createGame,
+  currentResults,
+  drawLetter,
   drawWeighted,
+  foldWord,
+  invalidReason,
   isFinished,
+  isSameWord,
+  letterRuleFailure,
   matchesLetter,
   newId,
   normalizeWord,
+  roundPoints,
   scoreRound,
   screenForGame,
   setAnswer,
   startNextRound,
+  statsChanges,
   totalScores,
+  winnerIds,
 } from './game';
 import { getPack } from './i18n';
 import type { AnswerEntry, GameSettings, GameState, PlayerDef, RoundState } from './types';
@@ -336,5 +346,199 @@ describe('totalScores', () => {
       ['p2', 0],
       ['p3', 0],
     ]);
+  });
+});
+
+describe('accent-insensitive letters', () => {
+  it('folds accents and marks so accented first letters match the plain round letter', () => {
+    expect(matchesLetter('éléphant', 'E')).toBe(true);
+    expect(matchesLetter('Écureuil', 'e')).toBe(true);
+    expect(matchesLetter('águila', 'A')).toBe(true);
+    expect(matchesLetter('ёж', 'Е')).toBe(true);
+    expect(matchesLetter('éléphant', 'A')).toBe(false);
+  });
+
+  it('reads every Arabic alef form as the plain alef', () => {
+    expect(matchesLetter('أسد', 'ا')).toBe(true);
+    expect(matchesLetter('إبريق', 'ا')).toBe(true);
+    expect(matchesLetter('آذار', 'ا')).toBe(true);
+    expect(matchesLetter('ٱبن', 'ا')).toBe(true);
+    expect(matchesLetter('بطة', 'ا')).toBe(false);
+  });
+
+  it('strips Hebrew niqqud', () => {
+    expect(foldWord('כֶּלֶב')).toBe('כלב');
+  });
+});
+
+describe('isSameWord', () => {
+  it('treats accent, case, spacing and hyphen variants as one word', () => {
+    expect(isSameWord('crème', 'Creme')).toBe(true);
+    expect(isSameWord('ice cream', 'ice-cream')).toBe(true);
+    expect(isSameWord('cat', 'cap')).toBe(false);
+  });
+
+  it('ignores a leading Hebrew or Arabic definite article', () => {
+    expect(isSameWord('הכלב', 'כלב')).toBe(true);
+    expect(isSameWord('ההודו', 'הודו')).toBe(true);
+    expect(isSameWord('الأسد', 'أسد')).toBe(true);
+    // Too short to carry an article: "הר" is not "ה" + "ר".
+    expect(isSameWord('הר', 'ר')).toBe(false);
+  });
+
+  it('scores article and accent variants as a shared word', () => {
+    const state = createGame(makeSettings(), makePlayers(2));
+    const round = makeRound(0, [answer('p1', 'food', 'crème'), answer('p2', 'food', 'Creme')]);
+    scoreRound(state, round);
+    expect(round.answers.map((a) => a.status)).toEqual(['shared', 'shared']);
+  });
+});
+
+describe('speed scoring rank', () => {
+  it('a fast empty or all-wrong sheet earns no rank and costs nobody a point', () => {
+    const state = createGame(makeSettings({ hasSpeedScoring: true }), makePlayers(3));
+    const round = makeRound(
+      0,
+      [
+        { ...answer('p1', 'animal', 'zebra'), status: 'invalid' },
+        answer('p2', 'animal', 'ant'),
+        answer('p3', 'animal', 'ape'),
+      ],
+      { finishTimes: { p1: 100, p2: 2000, p3: 3000 } },
+    );
+    scoreRound(state, round);
+    const points = new Map(round.answers.map((a) => [a.playerId, a.points]));
+    expect(points.get('p1')).toBe(0);
+    expect(points.get('p2')).toBe(10); // fastest valid sheet
+    expect(points.get('p3')).toBe(9);
+  });
+});
+
+describe('drawLetter', () => {
+  it('never repeats a letter in a classic game until every letter came up', () => {
+    const state = createGame(makeSettings(), makePlayers(1));
+    const letters = getPack('en').letters;
+    const drawn = new Set<string>();
+    for (let i = 0; i < letters.length; i++) {
+      const l = drawLetter(state);
+      state.usedLetters.push(l);
+      drawn.add(l);
+    }
+    expect(drawn.size).toBe(letters.length);
+    // Alphabet exhausted: a draw still works (weighted repeat).
+    expect(letters).toContain(drawLetter(state));
+  });
+});
+
+describe('winners', () => {
+  function withTotals(scores: number[]): GameState {
+    const state = createGame(makeSettings(), makePlayers(scores.length));
+    const round = makeRound(
+      0,
+      scores.map((s, i) => ({ ...answer(`p${String(i + 1)}`, 'animal', 'ant'), points: s })),
+      { phase: 'done' },
+    );
+    state.rounds.push(round);
+    return state;
+  }
+
+  it('nobody wins a 0-0 game', () => {
+    const state = withTotals([0, 0]);
+    expect(winnerIds(state)).toEqual([]);
+    expect(countsAsWin(state, 'p1')).toBe(false);
+  });
+
+  it('ties share the win', () => {
+    expect(winnerIds(withTotals([10, 10, 5]))).toEqual(['p1', 'p2']);
+  });
+
+  it('a solo game never counts as a leaderboard win', () => {
+    const state = withTotals([30]);
+    expect(winnerIds(state)).toEqual(['p1']);
+    expect(countsAsWin(state, 'p1')).toBe(false);
+  });
+
+  it('roundPoints sums one round per player', () => {
+    const state = withTotals([10, 5]);
+    const round = state.rounds[0];
+    if (!round) throw new Error('round missing');
+    expect([...roundPoints(state, round).entries()]).toEqual([
+      ['p1', 10],
+      ['p2', 5],
+    ]);
+  });
+});
+
+describe('statsChanges', () => {
+  function withRounds(rounds: number[][]): GameState {
+    const state = createGame(makeSettings(), makePlayers(rounds[0]?.length ?? 0));
+    rounds.forEach((scores, index) => {
+      state.rounds.push(
+        makeRound(
+          index,
+          scores.map((s, i) => ({ ...answer(`p${String(i + 1)}`, 'animal', 'ant'), points: s })),
+          { phase: 'done' },
+        ),
+      );
+    });
+    return state;
+  }
+
+  it('the first end adds a whole game per human player', () => {
+    const state = withRounds([[10, 5]]);
+    expect(statsChanges(state)).toEqual([
+      { playerId: 'p1', games: 1, wins: 1, points: 10 },
+      { playerId: 'p2', games: 1, wins: 0, points: 5 },
+    ]);
+  });
+
+  it('bots never touch the leaderboard', () => {
+    const state = withRounds([[10, 5]]);
+    const bot = state.players[1];
+    if (!bot) throw new Error('player missing');
+    bot.isBot = true;
+    expect(statsChanges(state).map((c) => c.playerId)).toEqual(['p1']);
+  });
+
+  it('a revived game that flips the winner moves the win, not the game count', () => {
+    const state = withRounds([[10, 5]]);
+    state.recordedResults = currentResults(state);
+    state.rounds.push(
+      makeRound(1, [
+        { ...answer('p1', 'animal', 'ant'), points: 0 },
+        { ...answer('p2', 'animal', 'ape'), points: 10 },
+      ]),
+    );
+    const last = state.rounds[1];
+    if (!last) throw new Error('round missing');
+    last.phase = 'done';
+    expect(statsChanges(state)).toEqual([
+      { playerId: 'p1', games: 0, wins: -1, points: 0 },
+      { playerId: 'p2', games: 0, wins: 1, points: 10 },
+    ]);
+  });
+
+  it('ending again with nothing new changes nothing', () => {
+    const state = withRounds([[10, 5]]);
+    state.recordedResults = currentResults(state);
+    expect(statsChanges(state)).toEqual([]);
+  });
+
+  it('a legacy save that already counted, without a baseline, is left alone', () => {
+    const state = withRounds([[10, 5]]);
+    state.hasRecordedStats = true;
+    expect(statsChanges(state)).toEqual([]);
+  });
+});
+
+describe('invalidReason', () => {
+  it('names the letter rule a word broke', () => {
+    expect(invalidReason('B', 'B')).toBe('short');
+    expect(invalidReason('Bob', 'K')).toBe('letter');
+  });
+
+  it('a word that passes the letter rules was voted out', () => {
+    expect(invalidReason('Kxqzt', 'K')).toBe('vote');
+    expect(letterRuleFailure('Kate', 'K')).toBeNull();
   });
 });

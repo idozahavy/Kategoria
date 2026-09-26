@@ -30,3 +30,16 @@ export function tallyVote(votes: Record<string, VoteChoice>, voterCount: number)
   if (no * 2 > voterCount) return 'rejected';
   return 'open';
 }
+
+/**
+ * Who gets a say on a word: everyone connected plus anyone who already voted,
+ * but never the word's own authors — they would always vote it in (with two
+ * players, one "yes" from the author would decide it).
+ */
+export function eligibleVoters(
+  connected: readonly string[],
+  votes: Record<string, VoteChoice>,
+  owners: readonly string[],
+): string[] {
+  return [...new Set([...connected, ...Object.keys(votes)])].filter((id) => !owners.includes(id));
+}

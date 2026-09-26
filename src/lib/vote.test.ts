@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { countVotes, tallyVote, type VoteChoice } from './vote';
+import { countVotes, eligibleVoters, tallyVote, type VoteChoice } from './vote';
 
 function ballots(...choices: VoteChoice[]): Record<string, VoteChoice> {
   return Object.fromEntries(choices.map((c, i) => [`p${String(i + 1)}`, c]));
@@ -52,5 +52,22 @@ describe('tallyVote (half or more of the voters say yes)', () => {
 
   it('leaves a vote with nobody to ask open for the host', () => {
     expect(tallyVote({}, 0)).toBe('open');
+  });
+});
+
+describe('eligibleVoters', () => {
+  it('leaves the word’s authors out, so an author cannot vote their own word in', () => {
+    const voters = eligibleVoters(['ida', 'noam'], {}, ['ida']);
+    expect(voters).toEqual(['noam']);
+    // Two players: the author's "yes" no longer decides the vote alone.
+    expect(tallyVote({ noam: 'no' }, voters.length)).toBe('rejected');
+  });
+
+  it('keeps a voter who already cast a ballot even after their phone drops', () => {
+    expect(eligibleVoters(['noam'], { maya: 'yes' }, ['ida']).sort()).toEqual(['maya', 'noam']);
+  });
+
+  it('with only authors connected, nobody is asked (the host decides)', () => {
+    expect(eligibleVoters(['ida', 'noam'], {}, ['ida', 'noam'])).toEqual([]);
   });
 });

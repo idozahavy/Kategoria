@@ -19,7 +19,7 @@
     border-radius: var(--radius-pill);
     font-weight: var(--font-weight-display);
     font-size: var(--font-size-small);
-    min-block-size: 44px;
+    min-block-size: var(--size-touch-chip);
     padding-block: var(--space-2);
     padding-inline: var(--space-4);
     cursor: pointer;

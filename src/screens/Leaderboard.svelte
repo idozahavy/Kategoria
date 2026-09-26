@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import { colorIndexForKey } from '../lib/avatar';
   import { listProfiles } from '../lib/db';
   import { t, tn } from '../lib/i18n';
   import { screen } from '../lib/stores';
@@ -43,7 +44,7 @@
     <div class="rows">
       {#each profiles as p, i (p.key)}
         <div class="row" class:top={i === 0}>
-          <Avatar name={p.name} avatar={p.avatar} colorIndex={(i % 8) + 1} size={40} />
+          <Avatar name={p.name} avatar={p.avatar} colorIndex={colorIndexForKey(p.key)} size={40} />
           {#if i === 0}<span class="crown">👑</span>{/if}
           <div class="who">
             <b class="name">{p.name}</b>

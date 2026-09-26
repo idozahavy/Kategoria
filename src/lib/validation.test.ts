@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { checkWord, inBundledList, type WordCheckOptions, wordFact } from './validation';
+import { checkWord, inBundledList, tidyFact, type WordCheckOptions, wordFact } from './validation';
 import { ensureWords } from './words';
 
 function opts(overrides: Partial<WordCheckOptions> = {}): WordCheckOptions {
@@ -48,6 +48,18 @@ describe('inBundledList', () => {
     expect(inBundledList(' ANT ', 'animal', 'en')).toBe(true);
     expect(inBundledList('ant', 'no-such-category', 'en')).toBe(false);
   });
+
+  it('finds accented list words typed without accents', async () => {
+    await ensureWords('fr');
+    expect(inBundledList('elephant', 'animal', 'fr')).toBe(true);
+    expect(inBundledList('Éléphant', 'animal', 'fr')).toBe(true);
+  });
+
+  it('accepts an accented first letter against the plain round letter', async () => {
+    await expect(
+      checkWord('éléphant', { categoryId: 'animal', letter: 'E', language: 'fr', mode: 'bundled' }),
+    ).resolves.toBe('valid');
+  });
 });
 
 describe('wordFact sense picking', () => {
@@ -79,7 +91,7 @@ describe('wordFact sense picking', () => {
       'large terrestrial mammal with a trunk',
     ]);
     await expect(wordFact('Elephant', 'en', 'animal')).resolves.toBe(
-      'large terrestrial mammal with a trunk',
+      'Large terrestrial mammal with a trunk.',
     );
   });
 
@@ -94,7 +106,7 @@ describe('wordFact sense picking', () => {
 
   it('without a category still skips the album and takes the first clean sense', async () => {
     stubSearch('mammoth', ['1996 song by a band', 'extinct genus of elephantid']);
-    await expect(wordFact('mammoth', 'en')).resolves.toBe('extinct genus of elephantid');
+    await expect(wordFact('mammoth', 'en')).resolves.toBe('Extinct genus of elephantid.');
   });
 
   it('caches per category, so the same word is looked up again for another one', async () => {
@@ -102,17 +114,42 @@ describe('wordFact sense picking', () => {
       'citrus fruit, a food',
       'colour between red and yellow',
     ]);
-    await expect(wordFact('orange', 'en', 'food')).resolves.toBe('citrus fruit, a food');
-    await expect(wordFact('orange', 'en', 'color')).resolves.toBe('colour between red and yellow');
-    await expect(wordFact('orange', 'en', 'food')).resolves.toBe('citrus fruit, a food');
+    await expect(wordFact('orange', 'en', 'food')).resolves.toBe('Citrus fruit, a food.');
+    await expect(wordFact('orange', 'en', 'color')).resolves.toBe('Colour between red and yellow.');
+    await expect(wordFact('orange', 'en', 'food')).resolves.toBe('Citrus fruit, a food.');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips a TV series even when adjectives split "television" from "series"', async () => {
+    stubSearch('dates', ['British television romantic drama series created by Bryan Elsley']);
+    await expect(wordFact('Dates', 'en', 'food')).resolves.toBeNull();
   });
 
   it("keeps person-name senses for the 'name' category", async () => {
     stubSearch('jordan', ['male given name', 'country in the Middle East']);
-    await expect(wordFact('Jordan', 'en', 'name')).resolves.toBe('male given name');
+    await expect(wordFact('Jordan', 'en', 'name')).resolves.toBe('Male given name.');
     stubSearch('taylor', ['2001 album', 'surname']);
-    await expect(wordFact('Taylor', 'en', 'name')).resolves.toBe('surname');
+    await expect(wordFact('Taylor', 'en', 'name')).resolves.toBe('Surname.');
     await expect(wordFact('Taylor', 'en', 'animal')).resolves.toBeNull();
+  });
+});
+
+describe('tidyFact', () => {
+  it('keeps the first clause and makes it a sentence', () => {
+    expect(
+      tidyFact(
+        'large metal pot for cooking or boiling over an open fire; hanging or standing',
+        'en',
+      ),
+    ).toBe('Large metal pot for cooking or boiling over an open fire.');
+  });
+
+  it('leaves finished sentences and scripts without case alone', () => {
+    expect(tidyFact('A bird!', 'en')).toBe('A bird!');
+    expect(tidyFact('עוף דורס', 'he')).toBe('עוף דורס.');
+  });
+
+  it('drops a dangling comma and handles the Arabic semicolon', () => {
+    expect(tidyFact('طائر كبير، ؛ يعيش في أفريقيا', 'ar')).toBe('طائر كبير.');
   });
 });

@@ -77,8 +77,8 @@ export function playFanfare(): void {
   tone(1047, 390, 350, 'triangle', 0.07);
 }
 
-/** Small haptic tap where supported (phones). */
-export function vibrate(ms: number): void {
+/** Haptic tap (ms) or pattern (on/off ms) where supported (phones). */
+export function vibrate(ms: number | number[]): void {
   if (!enabled) return;
   try {
     if ('vibrate' in navigator) navigator.vibrate(ms);

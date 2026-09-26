@@ -6,6 +6,7 @@
     disabled = false,
     block = false,
     type = 'button',
+    ariaLabel = undefined,
     onclick,
     children,
   }: {
@@ -13,12 +14,14 @@
     disabled?: boolean;
     block?: boolean;
     type?: 'button' | 'submit';
+    /** Spoken name when the visible content is only a symbol (−, +). */
+    ariaLabel?: string;
     onclick?: (e: MouseEvent) => void;
     children: Snippet;
   } = $props();
 </script>
 
-<button class="btn {variant}" class:block {type} {disabled} {onclick}>
+<button class="btn {variant}" class:block {type} {disabled} aria-label={ariaLabel} {onclick}>
   {@render children()}
 </button>
 
@@ -28,7 +31,7 @@
     border-radius: var(--radius-md);
     font-weight: var(--font-weight-display);
     font-size: var(--font-size-body);
-    min-block-size: 48px;
+    min-block-size: var(--size-touch);
     padding-block: 13px 10px; /* design-ignore: optical centering against the 5px pressable bottom edge */
     padding-inline: var(--space-5);
     cursor: pointer;

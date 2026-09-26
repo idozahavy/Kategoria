@@ -35,6 +35,27 @@ export interface ResultCategory extends RoundCategory {
   answers: ResultAnswer[];
 }
 
+/** One player's line in the standings / final scores sent to every phone. */
+export interface StandingRow {
+  name: string;
+  score: number;
+  colorIndex: number;
+  /** Emoji avatar only — photos stay on the host (see wireAvatar). */
+  avatar?: string;
+  /** Points gained in the round just played (standings after a round). */
+  delta: number;
+  /** Holds the best total (final scores; nobody while nobody scored). */
+  isWinner: boolean;
+}
+
+/**
+ * Photo avatars are too big to repeat in every message, so only emoji travel.
+ * Absent keys are left out entirely: undefined arrives as null over PeerJS.
+ */
+export function wireAvatar(avatar: string | undefined): { avatar?: string } {
+  return avatar !== undefined && avatar !== '' && !avatar.startsWith('data:') ? { avatar } : {};
+}
+
 export type GuestMessage =
   | { type: 'hello'; name: string; avatar?: string; deviceId?: string }
   | { type: 'answers'; roundIndex: number; answers: Record<string, string> }
@@ -51,11 +72,21 @@ export type HostMessage =
       roundIndex: number;
       roundCount: number;
       letter: string;
+      /** Seconds left when sent (a mid-round replay sends less than the full timer). */
       seconds: number | null;
+      /** The turn's full length, for the draining timer bar. */
+      totalSeconds: number | null;
       categories: RoundCategory[];
     }
   | { type: 'received' }
-  | { type: 'vote'; voteId: string; word: string; category: RoundCategory }
+  | {
+      type: 'vote';
+      voteId: string;
+      word: string;
+      category: RoundCategory;
+      /** Who wrote the word — they don't vote on their own answer. */
+      ownerIds: string[];
+    }
   | {
       type: 'results';
       roundIndex: number;
@@ -63,9 +94,11 @@ export type HostMessage =
       letter: string;
       categories: ResultCategory[];
       /** Best totals so far, top first. */
-      standings: { name: string; score: number }[];
+      standings: StandingRow[];
+      /** 'unique' scoring: a valid word is labelled "Unique!", otherwise "Good word!". */
+      isUniqueScoring: boolean;
     }
-  | { type: 'scores'; rows: { name: string; score: number }[]; winner: string }
+  | { type: 'scores'; rows: StandingRow[]; winner: string }
   | { type: 'ended' };
 
 export interface GuestInfo {

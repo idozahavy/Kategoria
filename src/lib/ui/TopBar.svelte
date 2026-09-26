@@ -45,8 +45,8 @@
     line-height: var(--line-height-h2);
   }
   .iconbtn {
-    inline-size: 48px;
-    block-size: 48px;
+    inline-size: var(--size-touch);
+    block-size: var(--size-touch);
     border: none;
     border-radius: var(--radius-md);
     background: var(--color-surface);

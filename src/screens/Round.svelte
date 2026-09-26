@@ -4,17 +4,21 @@
   import { BOT_THINK_MS, botAnswers } from '../lib/bot';
   import { categoryEmoji } from '../lib/categories';
   import { matchesLetter, setAnswer, TIMER_OPTIONS } from '../lib/game';
-  import { categoryName, t } from '../lib/i18n';
+  import { categoryName, getPack, t } from '../lib/i18n';
   import { getActiveRoom, type GuestMessage, setActiveRoom } from '../lib/p2p';
-  import { playTick } from '../lib/sound';
+  import { playDing, playTick, vibrate } from '../lib/sound';
   import { game, screen, updateGame } from '../lib/stores';
+  import { TIME_UP_BUZZ, timerBuzz } from '../lib/timer';
   import type { GameState, RoundState, ScoringSystem, ValidationMode } from '../lib/types';
   import Avatar from '../lib/ui/Avatar.svelte';
   import Button from '../lib/ui/Button.svelte';
   import Card from '../lib/ui/Card.svelte';
   import Chip from '../lib/ui/Chip.svelte';
+  import LetterReveal from '../lib/ui/LetterReveal.svelte';
   import LetterTile from '../lib/ui/LetterTile.svelte';
   import Modal from '../lib/ui/Modal.svelte';
+  import Select from '../lib/ui/Select.svelte';
+  import Stepper from '../lib/ui/Stepper.svelte';
   import TextInput from '../lib/ui/TextInput.svelte';
   import TimerPill from '../lib/ui/TimerPill.svelte';
   import TopBar from '../lib/ui/TopBar.svelte';
@@ -41,6 +45,12 @@
   const round = $derived($game ? $game.rounds[$game.currentRound] : null);
   const players = $derived($game?.players ?? []);
   const activePlayer = $derived(players.find((p) => p.id === round?.activePlayerId) ?? null);
+  /** "Player 2 of 3" on the pass-the-device panel. */
+  const handoffStepText = $derived(
+    $t('round.turnOf')
+      .replace('{n}', String(players.findIndex((p) => p.id === activePlayer?.id) + 1))
+      .replace('{total}', String(players.length)),
+  );
   const submittedSet = $derived(new Set(round?.submittedIds ?? []));
   // Primitive-valued deriveds so the timer effect below only restarts when the
   // turn/round actually changes — not on every game clone (e.g. remote answers).
@@ -53,10 +63,12 @@
   let answers = $state<Record<string, string>>({});
   let handoffOpen = $state(false);
   let showLeaveConfirm = $state(false);
-  let showSubmitConfirm = $state(false);
   let showSettings = $state(false);
   let showTimeUp = $state(false);
   let timeLeft = $state<number | null>(null);
+  /** The letter reveal + 3-2-1 is covering the screen; the clock starts when it ends. */
+  let revealing = $state(false);
+  const revealLetters = $derived($game ? getPack($game.settings.language).letters : []);
   /** Answer inputs in category order, so Enter can hop to the next one. */
   let answerInputs = $state<(HTMLInputElement | undefined)[]>([]);
 
@@ -84,17 +96,62 @@
     });
   });
 
-  // Stamp when the turn's entry actually begins (handoff dismissed / round sent
-  // to guests). Persisted in the save, so a reload resumes the countdown from
-  // the wall clock instead of restarting it — and it feeds speed scoring.
+  // A fresh turn (handoff dismissed, or a remote round on the shared screen)
+  // opens with the letter reveal; the robot's turn skips straight to the clock.
   $effect(() => {
     void roundIndex;
     if (!activePid || roundPhase !== 'entry' || handoffOpen || turnStartedAt !== null) return;
+    if (revealing) return;
+    if (untrack(() => activePlayer?.isBot === true)) stampTurnStart();
+    else revealing = true;
+  });
+
+  // Stamp when the turn's entry actually begins (after the reveal). Persisted
+  // in the save, so a reload resumes the countdown from the wall clock instead
+  // of restarting it (and skips the reveal) — and it feeds speed scoring.
+  function stampTurnStart(): void {
     updateGame((g) => {
       const r = g.rounds[g.currentRound];
       if (r && r.phase === 'entry' && r.turnStartedAt === undefined) r.turnStartedAt = Date.now();
     });
+  }
+
+  function onRevealDone(): void {
+    revealing = false;
+    stampTurnStart();
+  }
+
+  function onRevealBeat(beat: 'land' | 'count' | 'go'): void {
+    if (beat === 'count') playTick();
+    else playDing();
+  }
+
+  // Typed words reach the save shortly after each keystroke, so a reload or
+  // "Leave" mid-turn keeps them (the prefill above restores them).
+  const DRAFT_SAVE_MS = 400;
+  $effect(() => {
+    const pid = activePid;
+    const words = { ...answers };
+    if (!pid || isRemote || roundPhase !== 'entry') return;
+    const id = setTimeout(() => {
+      saveDraft(pid, words);
+    }, DRAFT_SAVE_MS);
+    return () => clearTimeout(id);
   });
+
+  function saveDraft(pid: string, words: Record<string, string>): void {
+    const r = untrack(() => round);
+    if (!r) return;
+    const stored = (catId: string): string =>
+      r.answers.find((a) => a.playerId === pid && a.categoryId === catId)?.word ?? '';
+    if (r.categoryIds.every((catId) => (words[catId] ?? '').trim() === stored(catId))) return;
+    updateGame((g) => {
+      const cur = g.rounds[g.currentRound];
+      // The turn may have moved on while the save was pending.
+      if (!cur || cur.phase !== 'entry' || cur.activePlayerId !== pid) return;
+      for (const catId of cur.categoryIds) setAnswer(cur, pid, catId, words[catId] ?? '');
+    });
+  }
 
   // Per-turn countdown; paused while the handoff panel is covering the screen.
   // Wall-clock based (not a decrement) so throttled tabs and reloads stay honest.
@@ -105,10 +162,15 @@
       timeLeft = null;
       return;
     }
+    let lastBuzzAt: number | null = null;
     const tick = (): void => {
       const left = timerSeconds - Math.floor((Date.now() - startedAt) / 1000);
       timeLeft = Math.max(left, 0);
       if (left > 0 && left <= 10) playTick();
+      // Buzz once per shown second (a throttled tab can repeat or skip one).
+      const buzz = timerBuzz(left, timerSeconds);
+      if (buzz > 0 && lastBuzzAt !== left) vibrate(buzz);
+      lastBuzzAt = left;
       if (left <= 0) {
         clearInterval(id);
         handleTimeUp();
@@ -125,6 +187,9 @@
     const g = $game;
     const r = round;
     if (!isRemote || !g || !r || r.phase !== 'entry' || r.index === lastBroadcastIndex) return;
+    // Held until the reveal on the shared screen ends, so every phone's clock
+    // starts with the host's.
+    if (r.turnStartedAt === undefined) return;
     lastBroadcastIndex = r.index;
     getActiveRoom()?.broadcast({
       type: 'round',
@@ -134,6 +199,7 @@
       letter: r.letter,
       // A host reload rebroadcasts mid-round — send what's left, not the full timer.
       seconds: remainingSeconds(g, r),
+      totalSeconds: g.settings.timerSeconds,
       categories: r.categoryIds.map((catId) => {
         const cat = categoryFor(catId);
         return {
@@ -217,10 +283,9 @@
     updateGame((g) => {
       const r = g.rounds[g.currentRound];
       if (!r || r.activePlayerId !== pid) return;
-      for (const catId of r.categoryIds) {
-        const word = words[catId] ?? '';
-        if (word.trim() !== '') setAnswer(r, pid, catId, word);
-      }
+      // Every category, blanks too: a word the player saved as a draft and
+      // then erased must be cleared, not kept.
+      for (const catId of r.categoryIds) setAnswer(r, pid, catId, words[catId] ?? '');
       // Bots get no finish time — speed points shouldn't reward robot reflexes.
       const player = g.players.find((p) => p.id === pid);
       if (r.turnStartedAt !== undefined && player?.isBot !== true) {
@@ -246,25 +311,15 @@
 
   function submitTurn() {
     if (!$game || !round || !activePlayer) return;
-    showSubmitConfirm = false;
     commitTurn(activePlayer.id, answers);
   }
 
-  /** Lock the words in — but confirm first when some categories are still blank. */
-  function requestSubmit(): void {
-    const hasEmpty = (round?.categoryIds ?? []).some(
-      (catId) => (answers[catId] ?? '').trim() === '',
-    );
-    if (hasEmpty) showSubmitConfirm = true;
-    else submitTurn();
-  }
-
-  /** Enter hops to the next category's input; on the last one it asks to finish. */
+  /** Enter hops to the next category's input; on the last one it locks the words in. */
   function onAnswerKeydown(e: KeyboardEvent, index: number): void {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     if (index >= (round?.categoryIds.length ?? 0) - 1) {
-      requestSubmit();
+      submitTurn();
       return;
     }
     answerInputs[index + 1]?.focus();
@@ -299,6 +354,7 @@
   function handleTimeUp() {
     const idx = roundIndex;
     showTimeUp = true;
+    vibrate(TIME_UP_BUZZ);
     // Remote: 3s grace so every guest's buzzer-beater auto-send can land
     // (each phone's countdown starts slightly after the host's). The window
     // ends early when the last guest submits — handleGuestAnswers moves the
@@ -371,17 +427,22 @@
 {#if round && $game}
   {#if handoffOpen}
     <div class="handoff">
-      {#if activePlayer !== null && activePlayer.avatar !== undefined}
-        <div class="handoff-emoji">
+      <span class="handoff-step">{handoffStepText}</span>
+      {#if activePlayer !== null}
+        <div
+          class="handoff-avatar"
+          style:border-color="var(--color-player-{activePlayer.colorIndex})"
+        >
           <Avatar
             name={activePlayer.name}
             avatar={activePlayer.avatar}
             colorIndex={activePlayer.colorIndex}
-            size={96}
+            size={112}
           />
+          {#if activePlayer.isBot !== true}
+            <span class="handoff-peek" aria-hidden="true">🙈</span>
+          {/if}
         </div>
-      {:else}
-        <div class="handoff-emoji">🙈</div>
       {/if}
       {#if activePlayer?.isBot === true}
         <p class="handoff-text">
@@ -391,8 +452,9 @@
         <p class="handoff-text">
           {$t('round.yourTurn').replace('{name}', activePlayer?.name ?? '')}
         </p>
+        <p class="handoff-hint">{$t('round.passHint')}</p>
         <Button variant="primary" block onclick={() => (handoffOpen = false)}
-          >{$t('common.ok')}</Button
+          >{$t('round.ready')}</Button
         >
       {/if}
     </div>
@@ -434,7 +496,11 @@
         </div>
       {/if}
       {#if $game.settings.timerSeconds}
-        <TimerPill seconds={timeLeft ?? $game.settings.timerSeconds} />
+        <TimerPill
+          seconds={timeLeft ?? $game.settings.timerSeconds}
+          total={$game.settings.timerSeconds}
+          large={isRemote}
+        />
       {/if}
     </div>
 
@@ -473,7 +539,7 @@
         {/each}
       </div>
 
-      <Button variant="primary" block onclick={requestSubmit}>{$t('round.done')}</Button>
+      <Button variant="primary" block onclick={submitTurn}>{$t('round.done')}</Button>
     {/if}
   {/if}
 
@@ -487,17 +553,18 @@
     </div>
   </Modal>
 
-  <Modal open={showSubmitConfirm} onclose={() => (showSubmitConfirm = false)}>
-    <p class="modal-text">{$t('round.submitConfirm')}</p>
-    <div class="modal-actions">
-      <Button variant="secondary" block onclick={() => (showSubmitConfirm = false)}
-        >{$t('common.cancel')}</Button
-      >
-      <Button variant="primary" block onclick={submitTurn}>{$t('round.done')}</Button>
-    </div>
-  </Modal>
+  {#if revealing}
+    <LetterReveal
+      letters={revealLetters}
+      letter={round.letter}
+      goLabel={$t('round.go')}
+      onbeat={onRevealBeat}
+      ondone={onRevealDone}
+    />
+  {/if}
 
   <Modal open={showTimeUp}>
+    <div class="time-up-emoji" aria-hidden="true">⏰</div>
     <p class="modal-text">{$t('round.timeUp')}</p>
   </Modal>
 
@@ -518,16 +585,17 @@
 
       <div class="settings-group">
         <span class="field-label">{$t('setup.rounds')}</span>
-        <div class="stepper">
-          <Button variant="secondary" onclick={() => adjustRounds(-1)}>−</Button>
-          <span class="stepper-value"
-            >{$game.settings.isEndless ? '∞' : $game.settings.roundCount}</span
-          >
-          <Button variant="secondary" onclick={() => adjustRounds(1)}>+</Button>
+        <Stepper
+          value={$game.settings.isEndless ? '∞' : $game.settings.roundCount}
+          ondecrement={() => adjustRounds(-1)}
+          onincrement={() => adjustRounds(1)}
+          decrementLabel={$t('setup.rounds.fewer')}
+          incrementLabel={$t('setup.rounds.more')}
+        >
           <Chip on={$game.settings.isEndless === true} onclick={toggleEndless}
             >{$t('setup.rounds.endless')}</Chip
           >
-        </div>
+        </Stepper>
       </div>
 
       {#if players.length > 1}
@@ -546,17 +614,16 @@
 
       <label class="settings-group">
         <span class="field-label">{$t('setup.validation')}</span>
-        <select
-          class="native-select"
+        <Select
           value={$game.settings.validation}
-          onchange={(e) => setValidation(e.currentTarget.value as ValidationMode)}
+          onchange={(v) => setValidation(v as ValidationMode)}
         >
           <option value="bundled">{$t('setup.validation.bundled')}</option>
           <option value="hybrid">{$t('setup.validation.hybrid')}</option>
           <option value="dictionary">{$t('setup.validation.dictionary')}</option>
           <option value="vote">{$t('setup.validation.vote')}</option>
           <option value="none">{$t('setup.validation.none')}</option>
-        </select>
+        </Select>
       </label>
 
       <div class="settings-group">
@@ -594,14 +661,54 @@
     padding: var(--space-5);
     text-align: center;
   }
-  .handoff-emoji {
-    font-size: calc(var(--font-size-display) * 1.6);
+  .handoff-step {
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-pill);
+    padding-block: var(--space-1);
+    padding-inline: var(--space-4);
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-subheading);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The player's own color rings their avatar, so the right kid grabs the device. */
+  .handoff-avatar {
+    position: relative;
+    display: flex;
+    border: var(--border-edge-width) solid;
+    border-radius: var(--radius-pill);
+    padding: var(--space-1);
+    animation: handoff-pop var(--duration-enter) var(--easing-spring);
+  }
+  .handoff-peek {
+    position: absolute;
+    inset-block-end: calc(-1 * var(--space-2));
+    inset-inline-end: calc(-1 * var(--space-2));
+    font-size: var(--font-size-display);
+    line-height: var(--line-height-display);
+  }
+  @keyframes handoff-pop {
+    from {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .handoff-avatar {
+      animation: none;
+    }
   }
   .handoff-text {
     font-size: var(--font-size-h1);
     font-weight: var(--font-weight-heading);
     line-height: var(--line-height-h1);
     max-inline-size: 320px;
+  }
+  .handoff-hint {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-subheading);
+    margin-block-start: calc(-1 * var(--space-3));
   }
   .handoff :global(.btn) {
     max-inline-size: 320px;
@@ -695,8 +802,8 @@
     font-size: var(--font-size-body);
   }
   .settings-btn {
-    inline-size: 48px;
-    block-size: 48px;
+    inline-size: var(--size-touch);
+    block-size: var(--size-touch);
     border: none;
     border-radius: var(--radius-md);
     background: var(--color-surface);
@@ -732,32 +839,32 @@
     flex-wrap: wrap;
     gap: var(--space-2);
   }
-  .stepper {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-  .stepper-value {
-    font-size: var(--font-size-h1);
-    font-weight: var(--font-weight-display);
-    font-variant-numeric: tabular-nums;
-    min-inline-size: 2ch;
-    text-align: center;
-  }
-  .native-select {
-    inline-size: 100%;
-    min-block-size: 48px;
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-weight: var(--font-weight-body);
-    font-family: inherit;
-    padding-inline: var(--space-4);
-  }
   .modal-text {
     font-weight: var(--font-weight-subheading);
     margin-block-end: var(--space-4);
+  }
+  .time-up-emoji {
+    font-size: calc(var(--font-size-display) * 1.6);
+    animation: shake var(--duration-pulse) var(--easing-standard);
+  }
+  @keyframes shake {
+    0%,
+    100% {
+      transform: rotate(0deg);
+    }
+    20%,
+    60% {
+      transform: rotate(-12deg);
+    }
+    40%,
+    80% {
+      transform: rotate(12deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .time-up-emoji {
+      animation: none;
+    }
   }
   .modal-actions {
     display: flex;

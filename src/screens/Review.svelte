@@ -4,25 +4,35 @@
   import { trackEvent } from '../lib/analytics';
   import { categoryEmoji } from '../lib/categories';
   import {
+    invalidReason,
     isFinished,
+    isSameWord,
     newId,
-    normalizeWord,
+    roundPoints,
     scoreRound,
     startNextRound,
     totalScores,
   } from '../lib/game';
   import { categoryName, t } from '../lib/i18n';
-  import { getActiveRoom, type GuestMessage, type ResultCategory } from '../lib/p2p';
+  import {
+    getActiveRoom,
+    type GuestMessage,
+    type ResultCategory,
+    type StandingRow,
+    wireAvatar,
+  } from '../lib/p2p';
   import { playDing } from '../lib/sound';
   import { game, screen, updateGame } from '../lib/stores';
-  import type { GameState, RoundState } from '../lib/types';
+  import type { AnswerStatus, GameState, RoundState } from '../lib/types';
+  import AnswerRow from '../lib/ui/AnswerRow.svelte';
   import Button from '../lib/ui/Button.svelte';
   import Card from '../lib/ui/Card.svelte';
   import Modal from '../lib/ui/Modal.svelte';
   import ScoreRow from '../lib/ui/ScoreRow.svelte';
+  import Spinner from '../lib/ui/Spinner.svelte';
   import TopBar from '../lib/ui/TopBar.svelte';
   import { checkWordWithin, learnWord, wordFact } from '../lib/validation';
-  import { tallyVote, type VoteChoice } from '../lib/vote';
+  import { eligibleVoters, tallyVote, type VoteChoice } from '../lib/vote';
 
   $effect(() => {
     if (!$game) screen.set('home');
@@ -61,23 +71,42 @@
   const ballotCount = $derived(Object.keys(ballots).length);
   /** Players whose phone is connected right now — refreshed while a vote is open. */
   let connectedVoters = $state<string[]>([]);
-  /** Who the vote is asking: everyone connected, plus anyone who already voted. */
-  const voterCount = $derived(new Set([...connectedVoters, ...Object.keys(ballots)]).size);
+  /**
+   * Who the vote is asking: everyone connected, plus anyone who already voted —
+   * except the word's own authors, who would always vote their word in.
+   */
+  const voterCount = $derived(
+    eligibleVoters(connectedVoters, ballots, currentVote?.owners ?? []).length,
+  );
+  /** Players who get a ballot on the current word (everyone but its authors). */
+  const ballotPlayers = $derived(
+    players.filter((p) => !(currentVote?.owners.includes(p.id) ?? false)),
+  );
   /** How often the open vote re-checks who is still connected. */
   const VOTE_POLL_MS = 1000;
 
   /** A robot never votes and doesn't make a game multiplayer for checks. */
   const humanCount = $derived(players.filter((p) => p.isBot !== true).length);
 
-  /** Best totals so far, top first. */
+  /** "Unique!" only means something when words are compared between players. */
+  const isUniqueScoring = $derived($game?.settings.scoring === 'unique' && players.length > 1);
+
+  /** Best totals so far, top first, with what each player gained this round. */
   const standings = $derived.by(() => {
-    if (!$game) return [];
+    if (!$game || !round) return [];
     const totals = totalScores($game);
+    const gained = roundPoints($game, round);
     return $game.players
-      .map((p) => ({ player: p, score: totals.get(p.id) ?? 0 }))
+      .map((p) => ({ player: p, score: totals.get(p.id) ?? 0, delta: gained.get(p.id) ?? 0 }))
       .sort((a, b) => b.score - a.score)
       .slice(0, STANDINGS_LIMIT);
   });
+
+  function statusLabel(status: AnswerStatus, word: string): string {
+    if (status === 'valid') return $t(isUniqueScoring ? 'review.unique' : 'review.good');
+    if (status === 'shared') return $t('review.shared');
+    return $t(`review.invalid.${invalidReason(word, round?.letter ?? '')}`);
+  }
 
   function categoryFor(catId: string) {
     return $game?.settings.categories.find((c) => c.id === catId) ?? null;
@@ -110,8 +139,9 @@
     const r = g.rounds[g.currentRound];
     if (!r) return;
     const pending = r.answers.filter((a) => a.status === 'pending' && a.word !== '');
-    // Grouped by (category, normalized word) so the same word is asked about once.
-    const votes = new Map<string, VoteItem>();
+    // Grouped by the same rule scoring uses (isSameWord: folded, with or
+    // without a leading article), so words scored as one are voted on once.
+    const votes: VoteItem[] = [];
     // All words at once, each under the same short deadline — checks are
     // independent and usually cache-warm (prefetched as words were submitted).
     // A word still undecided when the deadline passes goes to the group.
@@ -133,16 +163,17 @@
         markInvalid(a.playerId, a.categoryId);
       } else if (verdict === 'vote') {
         if (humanCount > 1) {
-          const key = `${a.categoryId}|${normalizeWord(a.word)}`;
-          const item = votes.get(key);
+          const item = votes.find(
+            (v) => v.categoryId === a.categoryId && isSameWord(v.word, a.word),
+          );
           if (item) item.owners.push(a.playerId);
-          else votes.set(key, { word: a.word, categoryId: a.categoryId, owners: [a.playerId] });
+          else votes.push({ word: a.word, categoryId: a.categoryId, owners: [a.playerId] });
         }
         // solo: auto-accept, stays pending until scored
       }
     });
     checking = false;
-    voteQueue = [...votes.values()];
+    voteQueue = votes;
     voteTotal = voteQueue.length;
     advanceVote();
   });
@@ -159,6 +190,8 @@
   function handleGuestVote(playerId: string, msg: GuestMessage): void {
     if (msg.type !== 'vote' || voteId === '' || msg.voteId !== voteId) return;
     if (!players.some((p) => p.id === playerId)) return;
+    // A word's author doesn't get a say on it (their phone shows it read-only).
+    if (currentVote?.owners.includes(playerId) === true) return;
     ballots = { ...ballots, [playerId]: msg.choice };
     settleDeviceVote();
   }
@@ -199,6 +232,7 @@
           label: cat ? $categoryName(cat) : a.categoryId,
           emoji: categoryEmoji(cat ?? a.categoryId),
         },
+        ownerIds: [...a.owners],
       });
     });
     const poll = setInterval(() => {
@@ -259,7 +293,15 @@
       roundCount: g.settings.isEndless ? 0 : g.settings.roundCount,
       letter: r.letter,
       categories: r.categoryIds.map((catId) => resultCategory(g, r, catId)),
-      standings: standings.map((s) => ({ name: s.player.name, score: s.score })),
+      standings: standings.map((s): StandingRow => ({
+        name: s.player.name,
+        score: s.score,
+        colorIndex: s.player.colorIndex,
+        ...wireAvatar(s.player.avatar),
+        delta: s.delta,
+        isWinner: false,
+      })),
+      isUniqueScoring,
     });
   }
 
@@ -345,9 +387,7 @@
   <TopBar title={$t('review.title')} backLabel={$t('setup.back')} />
 
   {#if checking}
-    <div class="spinner-wrap">
-      <div class="spinner" role="status" aria-label={$t('review.title')}></div>
-    </div>
+    <Spinner emoji="🔎" label={$t('review.checking')} />
   {:else if round.phase === 'done'}
     <div class="results">
       {#each round.categoryIds as catId (catId)}
@@ -362,27 +402,13 @@
               {@const entry = round.answers.find(
                 (a) => a.playerId === p.id && a.categoryId === catId,
               )}
-              <li class="answer-row">
-                <span class="player-name">{p.name}</span>
-                {#if !entry || entry.word === ''}
-                  <span class="word-empty">—</span>
-                {:else}
-                  <span class="word" class:invalid={entry.status === 'invalid'}>{entry.word}</span>
-                  <span
-                    class="badge"
-                    class:success={entry.status === 'valid'}
-                    class:warning={entry.status === 'shared'}
-                    class:muted={entry.status === 'invalid'}
-                  >
-                    {entry.status === 'valid'
-                      ? $t('review.unique')
-                      : entry.status === 'shared'
-                        ? $t('review.shared')
-                        : $t('review.invalid')}
-                    · {entry.points}
-                  </span>
-                {/if}
-              </li>
+              <AnswerRow
+                name={p.name}
+                word={entry?.word ?? ''}
+                status={entry?.status ?? 'invalid'}
+                points={entry?.points ?? 0}
+                label={statusLabel(entry?.status ?? 'invalid', entry?.word ?? '')}
+              />
             {/each}
           </ul>
         </Card>
@@ -393,7 +419,8 @@
             <span class="fact-emoji">✨</span>
             <div class="fact-body">
               <b class="fact-title">{$t('review.funFact')}</b>
-              <span class="fact-text">{fact.word} — {fact.text}</span>
+              <span class="fact-word">{fact.word}</span>
+              <span class="fact-text">{fact.text}</span>
             </div>
           </div>
         </Card>
@@ -405,6 +432,8 @@
             <ScoreRow
               name={s.player.name}
               score={s.score}
+              from={s.score - s.delta}
+              delta={s.delta}
               colorIndex={s.player.colorIndex}
               avatar={s.player.avatar}
             />
@@ -425,7 +454,7 @@
     </div>
   {/if}
 
-  <Modal open={currentVote !== null}>
+  <Modal open={currentVote !== null} focusFirst={false}>
     <div class="vote-emoji">🤔</div>
     <p class="vote-question">{voteQuestion}</p>
     {#if voteTotal > 1}
@@ -434,7 +463,7 @@
     {#if votesOnDevices}
       <p class="vote-phones">📱 {$t('review.vote.phones')}</p>
       <div class="ballots">
-        {#each players as p (p.id)}
+        {#each ballotPlayers as p (p.id)}
           {@const choice = ballots[p.id]}
           {@const away = choice === undefined && !connectedVoters.includes(p.id)}
           <span class="ballot" class:yes={choice === 'yes'} class:no={choice === 'no'} class:away>
@@ -466,31 +495,6 @@
 {/if}
 
 <style>
-  .spinner-wrap {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-block: var(--space-6);
-  }
-  .spinner {
-    inline-size: 40px;
-    block-size: 40px;
-    border-radius: var(--radius-pill);
-    border: 5px solid var(--color-border);
-    border-block-start-color: var(--color-primary);
-    animation: spin 800ms linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
-  }
   .results {
     display: flex;
     flex-direction: column;
@@ -515,46 +519,6 @@
     flex-direction: column;
     gap: var(--space-2);
     list-style: none;
-  }
-  .answer-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .player-name {
-    font-weight: var(--font-weight-subheading);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .word-empty {
-    color: var(--color-muted);
-  }
-  .word.invalid {
-    color: var(--color-muted);
-    text-decoration: line-through;
-  }
-  .badge {
-    border-radius: var(--radius-pill);
-    padding-block: var(--space-1);
-    padding-inline: var(--space-3);
-    font-weight: var(--font-weight-subheading);
-    font-size: var(--font-size-small);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .badge.success {
-    background: var(--color-success);
-    color: var(--color-on-success);
-  }
-  .badge.warning {
-    background: var(--color-warning);
-    color: var(--color-on-warning);
-  }
-  .badge.muted {
-    background: var(--color-border);
-    color: var(--color-muted);
   }
   .standings-title {
     font-weight: var(--font-weight-subheading);
@@ -584,6 +548,12 @@
   }
   .fact-title {
     font-weight: var(--font-weight-subheading);
+  }
+  .fact-word {
+    font-size: var(--font-size-h2);
+    font-weight: var(--font-weight-heading);
+    line-height: var(--line-height-h2);
+    color: var(--color-primary);
   }
   .fact-text {
     color: var(--color-muted);

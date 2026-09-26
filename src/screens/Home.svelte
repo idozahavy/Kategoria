@@ -25,7 +25,8 @@
 
 <div class="home">
   <div class="logo">🎪</div>
-  <h1 class="title">{$t('app.title')}</h1>
+  <!-- dir="auto": the Latin wordmark keeps its "!" at the end inside RTL pages. -->
+  <h1 class="title" dir="auto">{$t('app.title')}</h1>
   <p class="tagline">{$t('home.tagline')}</p>
 
   <div class="actions">
