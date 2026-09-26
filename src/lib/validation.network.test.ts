@@ -214,6 +214,29 @@ describe('wordFact', () => {
     await expect(wordFact('quokka', 'en')).resolves.toBeNull();
   });
 
+  it('skips descriptions that fell back to another language', async () => {
+    stubFetch({
+      wbsearchentities: () =>
+        Response.json({
+          search: [
+            {
+              id: 'Q186392',
+              match: { text: 'גור' },
+              description: 'province of Afghanistan',
+              display: { description: { value: 'province of Afghanistan', language: 'en' } },
+            },
+            {
+              id: 'Q3477974',
+              match: { text: 'גור' },
+              description: 'יישוב בווירג׳יניה',
+              display: { description: { value: 'יישוב בווירג׳יניה', language: 'he' } },
+            },
+          ],
+        }),
+    });
+    await expect(wordFact('גור', 'he')).resolves.toBe('יישוב בווירג׳יניה.');
+  });
+
   it('remembers a fact but not a failed lookup', async () => {
     const failing = stubFetch({ wbsearchentities: () => new Response('', { status: 503 }) });
     await expect(wordFact('rhea', 'en')).resolves.toBeNull();

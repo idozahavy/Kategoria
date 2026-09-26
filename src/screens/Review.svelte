@@ -31,7 +31,7 @@
   import ScoreRow from '../lib/ui/ScoreRow.svelte';
   import Spinner from '../lib/ui/Spinner.svelte';
   import TopBar from '../lib/ui/TopBar.svelte';
-  import { checkWordWithin, learnWord, wordFact } from '../lib/validation';
+  import { checkWordWithin, hasWordFacts, learnWord, wordFact } from '../lib/validation';
   import { eligibleVoters, tallyVote, type VoteChoice } from '../lib/vote';
 
   $effect(() => {
@@ -330,7 +330,7 @@
     const r = g ? g.rounds[g.currentRound] : null;
     if (!g || !r || g.settings.hasFunFacts === false) return;
     const best = r.answers
-      .filter((a) => a.status === 'valid' && a.word !== '')
+      .filter((a) => a.status === 'valid' && a.word !== '' && hasWordFacts(a.categoryId))
       .sort((a, b) => b.word.length - a.word.length)[0];
     if (!best) return;
     const text = await wordFact(best.word, g.settings.language, best.categoryId);

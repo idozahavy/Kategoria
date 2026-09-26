@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { checkWord, inBundledList, tidyFact, type WordCheckOptions, wordFact } from './validation';
+import {
+  checkWord,
+  hasWordFacts,
+  inBundledList,
+  tidyFact,
+  type WordCheckOptions,
+  wordFact,
+} from './validation';
 import { ensureWords } from './words';
 
 function opts(overrides: Partial<WordCheckOptions> = {}): WordCheckOptions {
@@ -125,12 +132,14 @@ describe('wordFact sense picking', () => {
     await expect(wordFact('Dates', 'en', 'food')).resolves.toBeNull();
   });
 
-  it("keeps person-name senses for the 'name' category", async () => {
+  it("has no facts for the 'name' category", async () => {
     stubSearch('jordan', ['male given name', 'country in the Middle East']);
-    await expect(wordFact('Jordan', 'en', 'name')).resolves.toBe('Male given name.');
+    await expect(wordFact('Jordan', 'en', 'name')).resolves.toBeNull();
     stubSearch('taylor', ['2001 album', 'surname']);
-    await expect(wordFact('Taylor', 'en', 'name')).resolves.toBe('Surname.');
     await expect(wordFact('Taylor', 'en', 'animal')).resolves.toBeNull();
+    expect(hasWordFacts('name')).toBe(false);
+    expect(hasWordFacts('animal')).toBe(true);
+    expect(hasWordFacts(undefined)).toBe(true);
   });
 });
 

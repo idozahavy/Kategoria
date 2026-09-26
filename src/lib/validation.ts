@@ -216,14 +216,23 @@ const MEDIA_SENSES = [
   'EP',
 ];
 
-/** Rejected everywhere except the name category, where they are the right sense. */
+/** A kid's "Tiger" or "Rose" is never the surname. */
 const PERSON_NAME_SENSES = ['surname', 'family name'];
 
 const FACT_REJECT = new RegExp(
   `\\b(${[...MEDIA_SENSES, ...PERSON_NAME_SENSES].join('|')})\\b`,
   'i',
 );
-const FACT_REJECT_NAME = new RegExp(`\\b(${MEDIA_SENSES.join('|')})\\b`, 'i');
+
+/**
+ * Builtin categories whose words never get a fact: for a name, Wikidata only
+ * knows "given name" / "surname" or some unrelated place or person.
+ */
+const NO_FACT_CATEGORIES = new Set(['name']);
+
+export function hasWordFacts(categoryId: string | undefined): boolean {
+  return categoryId === undefined || !NO_FACT_CATEGORIES.has(categoryId);
+}
 
 /**
  * Descriptions that read like the category, keyed by the builtin ids of
@@ -236,7 +245,6 @@ const FACT_HINT: Record<string, RegExp> = {
   food: /\b(food|dish|dessert|cuisine|snack|meal|edible|beverage|drink|bread|cheese|sauce|fruit|vegetable)\b/i,
   city: /\b(city|town|village|municipality|capital|settlement|commune|borough|county seat)\b/i,
   country: /\b(country|sovereign state|nation|republic|kingdom|federation)\b/i,
-  name: /\b(given name|surname|family name|male name|female name|personal name)\b/i,
   plant: /\b(plant|tree|flower|genus|species|shrub|herb|grass|vegetable|fungus)\b/i,
   profession: /\b(profession|occupation|job|worker|person who|specialist|practitioner)\b/i,
   sport: /\b(sport|game|athletic|olympic|discipline|martial art)\b/i,
@@ -268,6 +276,7 @@ export async function wordFact(
   language: string,
   categoryId?: string,
 ): Promise<string | null> {
+  if (!hasWordFacts(categoryId)) return null;
   const w = normalizeWord(word);
   const key = `${language}:${categoryId ?? ''}:${w}`;
   const cached = factCache.get(key);
@@ -278,15 +287,22 @@ export async function wordFact(
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {
-      search?: { description?: string; match?: { text?: string } }[];
+      search?: {
+        description?: string;
+        match?: { text?: string };
+        display?: { description?: { language?: string } };
+      }[];
     };
-    const reject = categoryId === 'name' ? FACT_REJECT_NAME : FACT_REJECT;
     const candidates: string[] = [];
     for (const s of data.search ?? []) {
       const description = s.description;
       if (s.match?.text?.toLocaleLowerCase() !== w) continue;
       if (typeof description !== 'string' || description === '') continue;
-      if (reject.test(description)) continue;
+      // Items with no description in `language` come back with a fallback
+      // (usually English): "גור" -> "province of Afghanistan".
+      const descLanguage = s.display?.description?.language;
+      if (descLanguage !== undefined && descLanguage !== language) continue;
+      if (FACT_REJECT.test(description)) continue;
       candidates.push(description);
     }
     const hint = categoryId === undefined ? undefined : FACT_HINT[categoryId];
