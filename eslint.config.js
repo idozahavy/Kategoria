@@ -35,9 +35,9 @@ export default ts.config(
       '@typescript-eslint/no-floating-promises': ['error', { ignoreVoid: true }],
     },
   },
-  // Node config scripts and perf-audit measurement scripts.
+  // Node config scripts, perf-audit measurement scripts and the capture tool.
   {
-    files: ['*.js', 'bench/**/*.mjs'],
+    files: ['*.js', 'bench/**/*.mjs', 'tools/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
 );

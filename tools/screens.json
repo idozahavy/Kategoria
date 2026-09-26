@@ -1,0 +1,238 @@
+{
+  "setup-robot": {
+    "description": "New game, players step: one empty human row plus a robot (the 'Me' placeholder)",
+    "tabs": {
+      "app": { "url": "http://localhost:5180/", "storage": { "categories-ui-language": "en" } }
+    },
+    "steps": [
+      { "tab": "app", "js": "await __cap.click('New Game'); await __cap.click('Add robot');" }
+    ],
+    "capture": [{ "tab": "app", "name": "players" }]
+  },
+
+  "vote-en": {
+    "description": "Pass-and-play, 2 players, invented words: the group vote modal (game + UI language {{lang}})",
+    "vars": { "lang": "en", "word1": "zzorbquex", "word2": "zzimblot" },
+    "tabs": {
+      "app": { "url": "http://localhost:5180/", "storage": { "categories-ui-language": "en" } }
+    },
+    "steps": [
+      {
+        "tab": "app",
+        "js": [
+          "await __cap.click('New Game');",
+          "await __cap.click('Add player');",
+          "const names = document.querySelectorAll('.players-list input');",
+          "__cap.type(names[0], 'Alice'); __cap.type(names[1], 'Bob');",
+          "await __cap.click('Next'); await __cap.click('Classic'); await __cap.click('Next');",
+          "await __cap.click('No timer');",
+          "document.querySelector('details.advanced').open = true; await __cap.sleep(200);",
+          "const sel = [...document.querySelectorAll('select')].find((s) => [...s.options].some((o) => o.value === 'ru'));",
+          "sel.value = '{{lang}}'; sel.dispatchEvent(new Event('change', { bubbles: true })); await __cap.sleep(300);",
+          "await __cap.clickSel('.btn.accent');",
+          "for (const suffix of ['{{word1}}', '{{word2}}']) {",
+          "  await __cap.waitFor(() => document.querySelector('.handoff .btn.primary'));",
+          "  await __cap.sleep(900); // Ready ignores taps in the first 0.7 s (HANDOFF_ARM_MS)",
+          "  await __cap.clickSel('.handoff .btn.primary');",
+          "  await __cap.sleep(5000);",
+          "  const input = await __cap.waitFor(() => document.querySelector('.cards input'));",
+          "  __cap.type(input, __cap.letter() + suffix); await __cap.sleep(600);",
+          "  await __cap.clickSel('.cards ~ .btn.primary');",
+          "  await __cap.sleep(1000);",
+          "}",
+          "return (await __cap.waitFor(() => document.querySelector('.vote-question'))).textContent;"
+        ]
+      }
+    ],
+    "capture": [{ "tab": "app", "name": "modal" }]
+  },
+  "vote-he": {
+    "template": "vote-en",
+    "description": "Vote modal in Hebrew (RTL)",
+    "vars": { "lang": "he", "word1": "ופלונקס", "word2": "וזימבלוט" },
+    "capture": [{ "tab": "app", "name": "modal", "widths": [390, 1440] }]
+  },
+  "vote-ar": {
+    "template": "vote-en",
+    "description": "Vote modal in Arabic (RTL)",
+    "vars": { "lang": "ar", "word1": "زربقوس", "word2": "زمبلوط" },
+    "capture": [{ "tab": "app", "name": "modal", "widths": [390, 1440] }]
+  },
+  "vote-es": {
+    "template": "vote-en",
+    "description": "Vote modal in Spanish",
+    "vars": { "lang": "es" },
+    "capture": [{ "tab": "app", "name": "modal", "widths": [390, 1440] }]
+  },
+  "vote-fr": {
+    "template": "vote-en",
+    "description": "Vote modal in French",
+    "vars": { "lang": "fr" },
+    "capture": [{ "tab": "app", "name": "modal", "widths": [390, 1440] }]
+  },
+  "vote-ru": {
+    "template": "vote-en",
+    "description": "Vote modal in Russian",
+    "vars": { "lang": "ru", "word1": "зорбквекс", "word2": "зимблот" },
+    "capture": [{ "tab": "app", "name": "modal", "widths": [390, 1440] }]
+  },
+
+  "room": {
+    "description": "Phones-join room: host + 2 phones (Ida on 127.0.0.1, Bruno on localhost). Phone round header, rejoin after reload with typed words, phone + host results with the speed-bonus note",
+    "tabs": {
+      "host": {
+        "url": "http://localhost:5180/",
+        "width": 1440,
+        "storage": { "categories-ui-language": "en" }
+      },
+      "ida": { "url": "http://127.0.0.1:5180/", "storage": { "categories-ui-language": "en" } },
+      "bruno": { "url": "http://localhost:5180/" }
+    },
+    "steps": [
+      {
+        "tab": "host",
+        "saveAs": "code",
+        "js": [
+          "await __cap.click('New Game');",
+          "await __cap.clickSel('.mode-card:nth-child(2)');",
+          "return (await __cap.waitFor(() => document.querySelector('.room-code'), 20000)).textContent.trim();"
+        ]
+      },
+      { "tab": "ida", "reload": "http://127.0.0.1:5180/?join={{code}}" },
+      {
+        "tab": "ida",
+        "js": "__cap.type(document.querySelectorAll('.join input')[1], 'Ida'); await __cap.clickSel('.join .btn.accent'); await __cap.waitFor(() => document.querySelector('.roster'), 20000);"
+      },
+      { "tab": "bruno", "reload": "http://localhost:5180/?join={{code}}" },
+      {
+        "tab": "bruno",
+        "js": "__cap.type(document.querySelectorAll('.join input')[1], 'Bruno'); await __cap.clickSel('.join .btn.accent'); await __cap.waitFor(() => document.querySelector('.roster'), 20000);"
+      },
+      {
+        "tab": "host",
+        "js": [
+          "await __cap.waitFor(() => document.querySelectorAll('.roster-chip').length === 2, 20000);",
+          "await __cap.click('Next'); await __cap.click('Classic'); await __cap.click('Next');",
+          "await __cap.click('No timer');",
+          "await __cap.clickSel('.btn.accent');",
+          "await __cap.waitFor(() => document.querySelector('.waiting-box'), 20000);"
+        ]
+      },
+      {
+        "tab": "ida",
+        "js": [
+          "const inputs = await __cap.waitFor(() => document.querySelectorAll('.cards input').length && document.querySelectorAll('.cards input'), 20000);",
+          "__cap.type(inputs[0], __cap.letter() + 'zzorb'); __cap.type(inputs[1], __cap.letter() + 'zzimb');",
+          "await __cap.sleep(500);"
+        ]
+      },
+      { "shot": { "tab": "ida", "name": "phone-round", "widths": [390] } },
+      { "tab": "ida", "reload": "http://127.0.0.1:5180/" },
+      {
+        "tab": "ida",
+        "js": [
+          "const first = await __cap.waitFor(() => document.querySelector('.cards input'), 20000);",
+          "if (!first.value.endsWith('zzorb')) throw new Error('typed words not restored after reload: ' + first.value);"
+        ]
+      },
+      { "shot": { "tab": "ida", "name": "phone-rejoined", "widths": [390] } },
+      { "tab": "ida", "js": "await __cap.clickSel('.cards ~ .btn.primary');" },
+      {
+        "tab": "bruno",
+        "js": [
+          "const inputs = await __cap.waitFor(() => document.querySelectorAll('.cards input').length && document.querySelectorAll('.cards input'), 20000);",
+          "__cap.type(inputs[0], __cap.letter() + 'zzorb'); await __cap.sleep(400);",
+          "await __cap.clickSel('.cards ~ .btn.primary');"
+        ]
+      },
+      {
+        "tab": "host",
+        "js": [
+          "const t0 = Date.now();",
+          "while (!document.querySelector('.speed-note')) {",
+          "  if (Date.now() - t0 > 30000) throw new Error('results never showed');",
+          "  const yes = [...document.querySelectorAll('.modal button, dialog button')].find((b) => b.textContent.includes('👍'));",
+          "  if (yes) yes.click();",
+          "  await __cap.sleep(700);",
+          "}"
+        ]
+      },
+      {
+        "tab": "ida",
+        "js": "await __cap.waitFor(() => document.querySelector('.speed-note'), 20000);"
+      }
+    ],
+    "capture": [
+      { "tab": "ida", "name": "phone-results", "scrollTo": ".speed-note" },
+      { "tab": "host", "name": "host-review", "scrollTo": ".speed-note" }
+    ]
+  },
+
+  "reconnecting": {
+    "description": "A phone whose host vanished mid-round: the reconnecting spinner (header keeps the round title) with its Leave button, then Home after Leave",
+    "tabs": {
+      "host": {
+        "url": "http://localhost:5180/",
+        "width": 1440,
+        "storage": { "categories-ui-language": "en" }
+      },
+      "ida": {
+        "url": "http://127.0.0.1:5180/",
+        "storage": { "categories-ui-language": "en" },
+        "init": "if (window.RTCPeerConnection) { const Base = window.RTCPeerConnection; window.__channels = []; window.RTCPeerConnection = class extends Base { createDataChannel(...a) { const c = super.createDataChannel(...a); window.__channels.push(c); return c; } }; }"
+      }
+    },
+    "steps": [
+      {
+        "tab": "host",
+        "saveAs": "code",
+        "js": [
+          "await __cap.click('New Game');",
+          "await __cap.clickSel('.mode-card:nth-child(2)');",
+          "return (await __cap.waitFor(() => document.querySelector('.room-code'), 20000)).textContent.trim();"
+        ]
+      },
+      { "tab": "ida", "reload": "http://127.0.0.1:5180/?join={{code}}" },
+      {
+        "tab": "ida",
+        "js": "__cap.type(document.querySelectorAll('.join input')[1], 'Ida'); await __cap.clickSel('.join .btn.accent'); await __cap.waitFor(() => document.querySelector('.roster'), 20000);"
+      },
+      {
+        "tab": "host",
+        "js": [
+          "await __cap.waitFor(() => document.querySelectorAll('.roster-chip').length === 1, 20000);",
+          "await __cap.click('Next'); await __cap.click('Classic'); await __cap.click('Next');",
+          "await __cap.click('No timer');",
+          "await __cap.clickSel('.btn.accent');",
+          "await __cap.waitFor(() => document.querySelector('.waiting-box'), 20000);"
+        ]
+      },
+      {
+        "tab": "ida",
+        "js": "await __cap.waitFor(() => document.querySelector('.cards input'), 20000);"
+      },
+      { "tab": "host", "close": true },
+      {
+        "tab": "ida",
+        "js": [
+          "await __cap.sleep(1000);",
+          "if (window.__channels.length === 0) throw new Error('no data channel was recorded');",
+          "for (const c of window.__channels) c.close();",
+          "await __cap.waitFor(() => document.querySelector('.reconnect-actions'), 10000);",
+          "const title = document.querySelector('header').innerText;",
+          "if (!title.includes('Round 1')) throw new Error('reconnecting header lost the round: ' + title);"
+        ]
+      },
+      { "shot": { "tab": "ida", "name": "spinner", "settle": 300 } },
+      {
+        "tab": "ida",
+        "js": [
+          "await __cap.clickSel('.reconnect-actions .btn');",
+          "await __cap.waitFor(() => document.querySelector('.home'));",
+          "if (sessionStorage.getItem('categories-guest') !== null) throw new Error('seat still remembered after Leave');"
+        ]
+      }
+    ],
+    "capture": [{ "tab": "ida", "name": "after-leave", "widths": [390] }]
+  }
+}
