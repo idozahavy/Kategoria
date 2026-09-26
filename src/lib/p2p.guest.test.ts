@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type GuestSession, joinRoom } from './p2p';
+import { type GuestSession, isHostMessage, joinRoom } from './p2p';
 import {
   type FakeConn,
   FakePeer,
@@ -136,13 +136,121 @@ describe('joined session', () => {
     });
   });
 
-  it('reports the host going away through onClose, once per close or error', async () => {
+  it('BUG-001: forwards every real message shape a host screen actually sends', async () => {
+    const { session, conn } = await joined();
+    const seen: unknown[] = [];
+    session.onMessage((m) => seen.push(m));
+    const category = { id: 'animal', label: 'Animal', emoji: '🐶' };
+    const standingRow = { name: 'Ida', score: 10, colorIndex: 0, delta: 3, isWinner: false };
+    // Same shape but with the avatar key present as null — PeerJS's binary
+    // serialization turns an omitted/undefined field into null on the wire.
+    const standingRowWithNullAvatar = { ...standingRow, avatar: null };
+    const legit = [
+      { type: 'welcome', playerId: 'guest-1-1' },
+      { type: 'roster', names: ['Ida', 'Ido'] },
+      { type: 'busy' },
+      {
+        type: 'round',
+        roundIndex: 0,
+        roundCount: 3,
+        letter: 'A',
+        seconds: 60,
+        totalSeconds: 60,
+        categories: [category],
+      },
+      // A mid-round rebroadcast after a host reload sends null timers.
+      {
+        type: 'round',
+        roundIndex: 0,
+        roundCount: 0,
+        letter: 'A',
+        seconds: null,
+        totalSeconds: null,
+        categories: [category],
+      },
+      { type: 'received' },
+      { type: 'vote', voteId: 'v1', word: 'ant', category, ownerIds: ['guest-1-1'] },
+      {
+        type: 'results',
+        roundIndex: 0,
+        roundCount: 3,
+        letter: 'A',
+        categories: [
+          {
+            ...category,
+            answers: [
+              { playerId: 'guest-1-1', name: 'Ida', word: 'ant', status: 'valid', points: 2 },
+            ],
+          },
+        ],
+        standings: [standingRow, standingRowWithNullAvatar],
+        isUniqueScoring: true,
+      },
+      { type: 'scores', rows: [standingRow], winner: 'Ida' },
+      { type: 'ended' },
+    ];
+    for (const msg of legit) conn.emit('data', msg);
+    expect(seen).toEqual(legit);
+  });
+
+  it('BUG-001: rejects host messages whose payload does not match the declared type', async () => {
+    const { session, conn } = await joined();
+    const seen: unknown[] = [];
+    session.onMessage((m) => seen.push(m));
+    const category = { id: 'animal', label: 'Animal', emoji: '🐶' };
+    const malformed = [
+      { type: 'welcome' }, // missing playerId
+      { type: 'roster', names: 'Ida' }, // names not an array
+      { type: 'round', roundIndex: 0, roundCount: 3, letter: 'A', seconds: 60 }, // no categories/totalSeconds
+      {
+        type: 'round',
+        roundIndex: 0,
+        roundCount: 3,
+        letter: 'A',
+        seconds: 60,
+        totalSeconds: 60,
+        categories: [{ id: 'x' }],
+      }, // category missing fields
+      { type: 'vote', voteId: 'v1', word: 'ant', category, ownerIds: 'guest-1-1' }, // ownerIds not an array
+      {
+        type: 'results',
+        roundIndex: 0,
+        roundCount: 3,
+        letter: 'A',
+        categories: [
+          {
+            ...category,
+            answers: [{ playerId: 'g', name: 'I', word: 'ant', status: 'bogus', points: 2 }],
+          },
+        ],
+        standings: [],
+        isUniqueScoring: true,
+      }, // invalid AnswerStatus
+      {
+        type: 'scores',
+        rows: [{ name: 'Ida', score: 10, colorIndex: 0, delta: 3 }],
+        winner: 'Ida',
+      }, // standing row missing isWinner
+      { type: 'hack', payload: 'evil' },
+    ];
+    for (const msg of malformed) conn.emit('data', msg);
+    expect(seen).toEqual([]);
+  });
+
+  it('BUG-001: isHostMessage rejects a payload that only has a valid type field', () => {
+    expect(isHostMessage({ type: 'round' })).toBe(false);
+    expect(isHostMessage({ type: 'scores' })).toBe(false);
+    expect(isHostMessage({ type: 'welcome' })).toBe(false);
+  });
+
+  it('reports the host going away through onClose once, even when close and error both fire', async () => {
     const { session, conn } = await joined();
     const onClose = vi.fn();
     session.onClose(onClose);
     conn.emit('close');
     conn.emit('error');
-    expect(onClose).toHaveBeenCalledTimes(2);
+    // One outage, one reconnect: a second call would start a second loop.
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('close() tears down both the connection and the peer', async () => {
@@ -150,5 +258,36 @@ describe('joined session', () => {
     session.close();
     expect(conn.closed).toBe(true);
     expect(peer.destroyed).toBe(true);
+  });
+
+  it('BUG-002: a peer error after join fires onClose exactly once, even with a cascade', async () => {
+    const { session, peer } = await joined();
+    const onClose = vi.fn();
+    session.onClose(onClose);
+    // A dropped broker connection can raise error, then disconnected, then
+    // close for the same underlying failure — the guest room must treat that
+    // as a single "the host is gone" event, not three.
+    peer.emit('error', { type: 'network' });
+    peer.emit('disconnected');
+    peer.emit('close');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('BUG-002: a peer "disconnected" alone (no error) still closes the guest room', async () => {
+    const { session, peer } = await joined();
+    const onClose = vi.fn();
+    session.onClose(onClose);
+    peer.emit('disconnected');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('BUG-002: intentionally closing the session does not also fire onClose from the peer', async () => {
+    const { session, peer } = await joined();
+    const onClose = vi.fn();
+    session.onClose(onClose);
+    session.onClose(null); // screens unsubscribe before an intentional close, exactly like Join.svelte
+    session.close();
+    peer.emit('close');
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

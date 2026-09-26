@@ -13,6 +13,7 @@
     PING_INTERVAL_MS,
   } from '../lib/p2p';
   import { hasCamera, roomCodeFromScan, startQrScan } from '../lib/qrscan';
+  import { resultsText, shareText } from '../lib/share';
   import { playFanfare, vibrate } from '../lib/sound';
   import { screen } from '../lib/stores';
   import { TIME_UP_BUZZ, timerBuzz } from '../lib/timer';
@@ -70,6 +71,9 @@
   let roster = $state<string[]>([]);
   /** Our seat in the room — highlights our own rows in the round results. */
   let playerId = $state('');
+  // Standings rows carry names only; the host may have renamed a clash ("Maya 2"),
+  // so the name this phone plays under comes from its own answers when known.
+  let myName = $state('');
 
   // Remember who/where this tab joined so a reload (or dropped connection)
   // can jump straight back into the running game — the host keeps the seat.
@@ -188,6 +192,8 @@
       else phase = votedIds.has(msg.voteId) ? 'voted' : 'vote';
     } else if (msg.type === 'results') {
       results = msg;
+      const mine = msg.categories.flatMap((c) => c.answers).find((a) => a.playerId === playerId);
+      if (mine) myName = mine.name;
       phase = 'results';
     } else if (msg.type === 'scores') {
       // A replay after a reconnect doesn't celebrate twice.
@@ -207,10 +213,26 @@
     }
   }
 
+  /** Final standings as a chat message (share sheet on phones, clipboard elsewhere). */
+  let shareNote = $state('');
+  async function shareResults(): Promise<void> {
+    if (!scores) return;
+    const text = resultsText(
+      $t('share.heading'),
+      scores.rows.map((r) => ({ name: r.name, score: r.score, isWinner: r.isWinner })),
+      `${location.origin}${location.pathname}`,
+    );
+    const outcome = await shareText(text);
+    if (outcome === 'copied') shareNote = $t('share.copied');
+    else if (outcome === 'failed') shareNote = $t('share.failed');
+    else shareNote = '';
+  }
+
   /** Take over a fresh connection: messages, heartbeat, and drop handling. */
   function wireSession(s: GuestSession): void {
     session = s;
     playerId = s.playerId;
+    if (myName === '') myName = name.trim();
     rememberSession();
     s.onMessage(handleMessage);
     s.onClose(() => {
@@ -560,7 +582,7 @@
                 status={a.status}
                 points={a.points}
                 label={statusLabel(a.status, a.word)}
-                isMe={a.playerId === playerId}
+                meLabel={a.playerId === playerId ? $t('join.you') : undefined}
               />
             {/each}
           </ul>
@@ -577,6 +599,7 @@
               delta={row.delta}
               colorIndex={row.colorIndex}
               avatar={row.avatar}
+              meLabel={row.name === myName ? $t('join.you') : undefined}
             />
           {/each}
         </div>
@@ -610,9 +633,14 @@
             from={0}
             colorIndex={row.colorIndex}
             avatar={row.avatar}
+            meLabel={row.name === myName ? $t('join.you') : undefined}
           />
         {/each}
       </div>
+      <Button variant="secondary" block onclick={() => void shareResults()}
+        >📤 {$t('share.action')}</Button
+      >
+      <p class="share-note" aria-live="polite">{shareNote}</p>
       <Button variant="primary" block onclick={leave}>{$t('score.home')}</Button>
     </div>
   {:else if phase === 'error'}
@@ -692,8 +720,16 @@
     gap: var(--space-3);
     text-align: center;
   }
+  .share-note {
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
+    text-align: center;
+  }
+  .share-note:empty {
+    display: none;
+  }
   .emoji {
-    font-size: calc(var(--font-size-display) * 1.6);
+    font-size: var(--size-illustration);
     text-align: center;
   }
   .big {

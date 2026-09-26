@@ -1,11 +1,19 @@
 import { writable } from 'svelte/store';
 
 import { saveGame } from './db';
-import type { GameState, Screen } from './types';
+import type { GameSettings, GameState, PlayerDef, Screen } from './types';
 
 export const screen = writable<Screen>('home');
 
 export const game = writable<GameState | null>(null);
+
+/**
+ * A finished game's setup, handed to NewGame by "Change setup" so the wizard
+ * opens prefilled. NewGame reads it once on creation and clears it.
+ */
+export const setupTemplate = writable<{ settings: GameSettings; players: PlayerDef[] } | null>(
+  null,
+);
 
 /**
  * Update the running game and persist it to IndexedDB (fire-and-forget).

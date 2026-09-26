@@ -844,7 +844,7 @@
     margin-block-end: var(--space-4);
   }
   .time-up-emoji {
-    font-size: calc(var(--font-size-display) * 1.6);
+    font-size: var(--size-illustration);
     animation: shake var(--duration-pulse) var(--easing-standard);
   }
   @keyframes shake {

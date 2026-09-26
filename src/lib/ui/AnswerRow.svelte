@@ -8,7 +8,7 @@
     status,
     points,
     label,
-    isMe = false,
+    meLabel = undefined,
   }: {
     name: string;
     word: string;
@@ -16,13 +16,18 @@
     points: number;
     /** Badge text, already translated ("Unique!", "Shared", ...). */
     label: string;
-    /** The viewer's own row (guest phones) — marked with a primary edge. */
-    isMe?: boolean;
+    /** Set only on the viewer's own row (guest phones): the translated "You" pill. */
+    meLabel?: string;
   } = $props();
 </script>
 
-<li class="answer-row" class:me={isMe}>
-  <span class="player-name">{name}</span>
+<li class="answer-row" class:me={meLabel !== undefined}>
+  <span class="who">
+    <span class="player-name">{name}</span>
+    {#if meLabel !== undefined}
+      <span class="you">{meLabel}</span>
+    {/if}
+  </span>
   {#if word === ''}
     <span class="word-empty">—</span>
   {:else}
@@ -48,11 +53,30 @@
     border-inline-start: var(--border-edge-width) solid var(--color-primary);
     padding-inline-start: var(--space-2);
   }
+  .me .player-name {
+    color: var(--color-primary);
+  }
+  /* The name shrinks first, so the "You" pill always stays readable. */
+  .who {
+    flex: 1;
+    min-inline-size: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
   .player-name {
     font-weight: var(--font-weight-subheading);
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .you {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border-radius: var(--radius-pill);
+    padding-inline: var(--space-2);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-display);
     white-space: nowrap;
   }
   .word-empty {

@@ -148,6 +148,28 @@ export const en: LanguagePack = {
     'score.playAgain': 'Play again',
     'score.home': 'Home',
     'score.stopAuto': 'Stop auto-continue ({n})',
+    'score.changeSetup': 'Change setup',
+    'share.action': 'Share results',
+    'share.heading': 'We played Kategoria! 🎉',
+    'share.copied': 'Copied — paste it in your chat!',
+    'share.failed': "Couldn't share on this device.",
+    'join.you': 'You',
+    'howto.title': 'How to play',
+    'howto.play': "Let's play!",
+    'howto.points.none': 'Empty or wrong',
+    'howto.letter.title': 'A letter is drawn',
+    'howto.letter.body': 'Every round starts with a surprise letter.',
+    'howto.words.title': 'Fill in the categories',
+    'howto.words.body':
+      'Write one word for each category that starts with that letter — an animal, a food, a city…',
+    'howto.clock.title': 'Beat the clock',
+    'howto.clock.body':
+      'Pass one phone around, or everyone joins on their own phone. Finish before the timer runs out!',
+    'howto.points.title': 'Score points',
+    'howto.points.body':
+      'A word nobody else wrote wins the most. The same word as someone else wins less.',
+    'howto.vote.title': 'Not sure? Vote!',
+    'howto.vote.body': "Words the game doesn't know go to a quick vote by the group.",
 
     'resume.title': 'Your saved games',
     'resume.empty.title': 'No saved games yet',

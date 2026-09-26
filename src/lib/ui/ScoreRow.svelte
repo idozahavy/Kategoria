@@ -12,6 +12,7 @@
     avatar = undefined,
     from = undefined,
     delta = undefined,
+    meLabel = undefined,
   }: {
     name: string;
     score: number;
@@ -21,6 +22,8 @@
     from?: number;
     /** Points gained this round, shown as a "+N" chip (hidden when absent or 0). */
     delta?: number;
+    /** Set only on the viewer's own row (guest phones): the translated "You" pill. */
+    meLabel?: string;
   } = $props();
 
   /** How long the count-up runs. */
@@ -35,13 +38,19 @@
   });
 </script>
 
-<div class="row">
+<div class="row" class:me={meLabel !== undefined}>
   <Avatar {name} {avatar} {colorIndex} size={40} />
   <b class="name">{name}</b>
+  {#if meLabel !== undefined}
+    <span class="you">{meLabel}</span>
+  {/if}
   {#if delta !== undefined && delta > 0}
     <span class="delta">+{delta}</span>
   {/if}
-  <span class="score" aria-label={String(score)}>{Math.round(shown.current)}</span>
+  <!-- The count-up is for the eyes; screen readers get the final number once,
+       and again whenever it changes (a new round's standings). -->
+  <span class="score" aria-hidden="true">{Math.round(shown.current)}</span>
+  <span class="visually-hidden" aria-live="polite">{score}</span>
 </div>
 
 <style>
@@ -54,9 +63,23 @@
     border-radius: var(--radius-md);
     background: var(--color-bg);
   }
+  .row.me {
+    outline: var(--border-width) solid var(--color-primary);
+    outline-offset: calc(var(--border-width) * -1);
+  }
   .name {
+    min-inline-size: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .you {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border-radius: var(--radius-pill);
+    padding-inline: var(--space-2);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-display);
     white-space: nowrap;
   }
   .delta {
@@ -90,6 +113,21 @@
     100% {
       transform: scale(1);
       opacity: 1;
+    }
+  }
+  @keyframes fade {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  /* Reduced motion: the chip fades in instead of scaling (scheme motion rule). */
+  @media (prefers-reduced-motion: reduce) {
+    .delta {
+      animation-name: fade;
+      animation-timing-function: linear;
     }
   }
 </style>

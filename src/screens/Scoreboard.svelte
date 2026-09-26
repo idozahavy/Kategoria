@@ -12,8 +12,9 @@
   } from '../lib/game';
   import { t } from '../lib/i18n';
   import { getActiveRoom, setActiveRoom, type StandingRow, wireAvatar } from '../lib/p2p';
+  import { resultsText, shareText } from '../lib/share';
   import { playFanfare, vibrate } from '../lib/sound';
-  import { game, screen, updateGame } from '../lib/stores';
+  import { game, screen, setupTemplate, updateGame } from '../lib/stores';
   import Button from '../lib/ui/Button.svelte';
   import Card from '../lib/ui/Card.svelte';
   import Confetti from '../lib/ui/Confetti.svelte';
@@ -168,6 +169,31 @@
     screen.set('round');
   }
 
+  /** Final standings as a chat message (share sheet on phones, clipboard elsewhere). */
+  let shareNote = $state('');
+  async function shareResults(): Promise<void> {
+    const text = resultsText(
+      $t('share.heading'),
+      standings.map((s) => ({
+        name: s.player.name,
+        score: s.score,
+        isWinner: winners.includes(s.player.id),
+      })),
+      `${location.origin}${location.pathname}`,
+    );
+    const outcome = await shareText(text);
+    if (outcome === 'copied') shareNote = $t('share.copied');
+    else if (outcome === 'failed') shareNote = $t('share.failed');
+    else shareNote = '';
+  }
+
+  /** Back to the setup wizard with this game's players and settings filled in. */
+  function changeSetup(): void {
+    if (!$game) return;
+    setupTemplate.set(structuredClone({ settings: $game.settings, players: $game.players }));
+    screen.set('new-game');
+  }
+
   function goHome() {
     updateGame((g) => {
       g.status = 'finished';
@@ -232,6 +258,16 @@
         >{$t('score.oneMore')}</Button
       >
       <Button variant="accent" block onclick={playAgain}>{$t('score.playAgain')}</Button>
+      <div class="pair">
+        <Button variant="ghost" block onclick={() => void shareResults()}
+          >📤 {$t('share.action')}</Button
+        >
+        <!-- A phones-join room can't be re-set up here: guests would have to rejoin. -->
+        {#if $game.settings.isRemote !== true}
+          <Button variant="ghost" block onclick={changeSetup}>⚙️ {$t('score.changeSetup')}</Button>
+        {/if}
+      </div>
+      <p class="share-note" aria-live="polite">{shareNote}</p>
       <Button variant="ghost" block onclick={goHome}>{$t('score.home')}</Button>
     </div>
   {:else}
@@ -289,5 +325,25 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+  /* Side by side when both labels fit on one line each; stacked otherwise
+     (long languages) — never a label broken over two lines. */
+  .pair {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .pair > :global(.btn) {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    padding-inline: var(--space-3);
+  }
+  .share-note {
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
+    text-align: center;
+  }
+  .share-note:empty {
+    display: none;
   }
 </style>

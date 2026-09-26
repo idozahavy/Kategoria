@@ -10,6 +10,7 @@
   import { game, screen } from './lib/stores';
   import { persistTheme, theme } from './lib/theme';
   import Home from './screens/Home.svelte';
+  import HowTo from './screens/HowTo.svelte';
   import Join from './screens/Join.svelte';
   import Leaderboard from './screens/Leaderboard.svelte';
   import LearnedWords from './screens/LearnedWords.svelte';
@@ -138,6 +139,8 @@
     <LearnedWords />
   {:else if $screen === 'leaderboard'}
     <Leaderboard />
+  {:else if $screen === 'how-to'}
+    <HowTo />
   {/if}
 </main>
 

@@ -148,6 +148,28 @@ export const es: LanguagePack = {
     'score.playAgain': 'Jugar otra vez',
     'score.home': 'Inicio',
     'score.stopAuto': 'Detener continuación automática ({n})',
+    'score.changeSetup': 'Cambiar ajustes',
+    'share.action': 'Compartir resultados',
+    'share.heading': '¡Jugamos a Kategoria! 🎉',
+    'share.copied': 'Copiado: ¡pégalo en tu chat!',
+    'share.failed': 'No se puede compartir en este dispositivo.',
+    'join.you': 'Tú',
+    'howto.title': 'Cómo jugar',
+    'howto.play': '¡A jugar!',
+    'howto.points.none': 'Vacía o incorrecta',
+    'howto.letter.title': 'Sale una letra',
+    'howto.letter.body': 'Cada ronda empieza con una letra sorpresa.',
+    'howto.words.title': 'Completa las categorías',
+    'howto.words.body':
+      'Escribe una palabra para cada categoría que empiece por esa letra: un animal, una comida, una ciudad…',
+    'howto.clock.title': 'Gana al reloj',
+    'howto.clock.body':
+      'Pasad un móvil de mano en mano o que cada uno se una con el suyo. ¡Termina antes de que se acabe el tiempo!',
+    'howto.points.title': 'Suma puntos',
+    'howto.points.body':
+      'Una palabra que nadie más escribió vale más. La misma palabra que otro vale menos.',
+    'howto.vote.title': '¿Dudas? ¡A votar!',
+    'howto.vote.body': 'Las palabras que el juego no conoce van a una votación rápida del grupo.',
 
     'resume.title': 'Tus partidas guardadas',
     'resume.empty.title': 'Aún no hay partidas guardadas',

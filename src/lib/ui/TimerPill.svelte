@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+
   import { timerStage } from '../timer';
 
   let {
@@ -16,10 +18,24 @@
   const stage = $derived(timerStage(seconds, total));
   const label = $derived(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
   const remaining = $derived(total > 0 ? Math.min(1, Math.max(0, seconds / total)) : 1);
+
+  // Screen readers hear the time left only when the pill changes stage (and at
+  // zero), not every second — a per-second live region would drown out typing.
+  let announcement = $state('');
+  $effect(() => {
+    const current = stage; // the only dependency: reruns on a stage change
+    untrack(() => {
+      if (current !== 'calm') announcement = label;
+    });
+  });
+  $effect(() => {
+    if (seconds === 0) untrack(() => (announcement = label));
+  });
 </script>
 
-<span class="timer {stage}" class:large>
+<span class="timer {stage}" class:large role="timer">
   <span class="label">{label}</span>
+  <span class="visually-hidden" aria-live="assertive">{announcement}</span>
   <span class="bar" aria-hidden="true" style:inline-size="{remaining * 100}%"></span>
 </span>
 

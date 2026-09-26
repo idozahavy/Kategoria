@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
 
   import { trackEvent } from '../lib/analytics';
   import { AVATAR_EMOJI, fileToAvatar } from '../lib/avatar';
@@ -20,7 +21,7 @@
   } from '../lib/game';
   import { availablePacks, categoryName, t, uiLanguage } from '../lib/i18n';
   import { createRoom, type GuestInfo, type HostRoom, setActiveRoom } from '../lib/p2p';
-  import { game, screen } from '../lib/stores';
+  import { game, screen, setupTemplate } from '../lib/stores';
   import type { PlayerProfile } from '../lib/types';
   import type {
     CategoryDef,
@@ -78,12 +79,26 @@
     emoji: CATEGORY_EMOJI[k],
   }));
 
+  // "Change setup" on a finished game hands over its setup; read it once.
+  const template = get(setupTemplate);
+  setupTemplate.set(null);
+
   let step = $state(1);
   let stepError = $state('');
   let starting = $state(false);
 
   // Step 1
-  let players = $state<PlayerDraft[]>([{ id: newId(), name: '' }]);
+  let players = $state<PlayerDraft[]>(
+    template !== null && template.players.length > 0
+      ? template.players.map((p) => ({
+          id: newId(),
+          // The anonymous solo default goes back to an empty name field.
+          name: p.name === $t('setup.soloName') ? '' : p.name,
+          avatar: p.avatar,
+          isBot: p.isBot,
+        }))
+      : [{ id: newId(), name: '' }],
+  );
   let playStyle = $state<'local' | 'remote'>('local');
   // The room object stays non-reactive (it holds live connections); only the
   // bits the template shows are $state.
@@ -184,33 +199,50 @@
   // Step 2 — categories start from the set the last game used (the picked
   // ones and the family's own), falling back to the classic five.
   const savedPrefs = readCategoryPrefs(BUILTIN_CATEGORY_KEYS);
-  let mode = $state<GameMode>('classic');
-  let customCategories = $state<CategoryDef[]>(savedPrefs?.custom ?? []);
+  const templateSettings = template?.settings;
+  let mode = $state<GameMode>(templateSettings?.mode ?? 'classic');
+  // The template's own custom categories join the remembered ones (by id).
+  const savedCustom = savedPrefs?.custom ?? [];
+  let customCategories = $state<CategoryDef[]>([
+    ...savedCustom,
+    ...(templateSettings?.categories ?? []).filter(
+      (c) => c.customName !== undefined && !savedCustom.some((s) => s.id === c.id),
+    ),
+  ]);
   let selectedCategoryIds = $state<string[]>(
-    savedPrefs !== null && savedPrefs.selectedIds.length > 0
-      ? savedPrefs.selectedIds
-      : [...DEFAULT_CATEGORY_IDS],
+    templateSettings !== undefined && templateSettings.categories.length > 0
+      ? templateSettings.categories.map((c) => c.id)
+      : savedPrefs !== null && savedPrefs.selectedIds.length > 0
+        ? savedPrefs.selectedIds
+        : [...DEFAULT_CATEGORY_IDS],
   );
   let newCategoryName = $state('');
   let categoryError = $state('');
 
   // Step 3
-  let scoring = $state<ScoringSystem>('unique');
-  let timerSeconds = $state<number | null>(120);
-  let roundCount = $state(3);
-  let isEndless = $state(false);
-  let hasWikidataCheck = $state(true);
-  let hasFunFacts = $state(true);
+  // A lone player's game was forced to 'simple' scoring; don't carry that over.
+  let scoring = $state<ScoringSystem>(
+    templateSettings !== undefined && (template?.players.length ?? 0) > 1
+      ? templateSettings.scoring
+      : 'unique',
+  );
+  let timerSeconds = $state<number | null>(
+    templateSettings !== undefined ? templateSettings.timerSeconds : 120,
+  );
+  let roundCount = $state(templateSettings?.roundCount ?? 3);
+  let isEndless = $state(templateSettings?.isEndless ?? false);
+  let hasWikidataCheck = $state(templateSettings?.hasWikidataCheck ?? true);
+  let hasFunFacts = $state(templateSettings?.hasFunFacts ?? true);
   // Speed bonus: on by default when phones answer at the same time, off for
   // pass-and-play where turns are taken one after another. null = untouched.
-  let speedScoringChoice = $state<boolean | null>(null);
+  let speedScoringChoice = $state<boolean | null>(templateSettings?.hasSpeedScoring ?? null);
   const hasSpeedScoring = $derived(speedScoringChoice ?? playStyle === 'remote');
   // Bundled lists decide instantly and offline; anything unknown goes to the
   // group. The online dictionary only checks that a word exists, not that it
   // fits the category, so it is opt-in.
-  let validation = $state<ValidationMode>('bundled');
+  let validation = $state<ValidationMode>(templateSettings?.validation ?? 'bundled');
   let voteMode = $state<VoteMode>('devices');
-  let gameLanguage = $state($uiLanguage);
+  let gameLanguage = $state(templateSettings?.language ?? $uiLanguage);
 
   const allCategories: CategoryDef[] = $derived([...builtinCategories, ...customCategories]);
   const playerCount = $derived(playStyle === 'remote' ? guestList.length : players.length);

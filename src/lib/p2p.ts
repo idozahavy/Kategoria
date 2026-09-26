@@ -225,23 +225,104 @@ export function isGuestMessage(v: unknown): v is GuestMessage {
   return m['type'] === 'ping';
 }
 
-function isHostMessage(v: unknown): v is HostMessage {
+function isRoundCategory(v: unknown): v is RoundCategory {
+  if (typeof v !== 'object' || v === null) return false;
+  const c = v as Record<string, unknown>;
+  return (
+    typeof c['id'] === 'string' && typeof c['label'] === 'string' && typeof c['emoji'] === 'string'
+  );
+}
+
+function isAnswerStatus(v: unknown): v is AnswerStatus {
+  return v === 'pending' || v === 'valid' || v === 'shared' || v === 'invalid';
+}
+
+function isResultAnswer(v: unknown): v is ResultAnswer {
+  if (typeof v !== 'object' || v === null) return false;
+  const a = v as Record<string, unknown>;
+  return (
+    typeof a['playerId'] === 'string' &&
+    typeof a['name'] === 'string' &&
+    typeof a['word'] === 'string' &&
+    isAnswerStatus(a['status']) &&
+    typeof a['points'] === 'number'
+  );
+}
+
+function isResultCategory(v: unknown): v is ResultCategory {
+  if (typeof v !== 'object' || v === null || !isRoundCategory(v)) return false;
+  const answers = (v as unknown as Record<string, unknown>)['answers'];
+  return Array.isArray(answers) && answers.every(isResultAnswer);
+}
+
+/** Absent keys arrive as null over the wire — see wireAvatar. */
+function isStandingRow(v: unknown): v is StandingRow {
+  if (typeof v !== 'object' || v === null) return false;
+  const s = v as Record<string, unknown>;
+  const avatar = s['avatar'];
+  return (
+    typeof s['name'] === 'string' &&
+    typeof s['score'] === 'number' &&
+    typeof s['colorIndex'] === 'number' &&
+    (avatar === undefined || avatar === null || typeof avatar === 'string') &&
+    typeof s['delta'] === 'number' &&
+    typeof s['isWinner'] === 'boolean'
+  );
+}
+
+/** Exported for tests — the security boundary for everything the host sends. */
+export function isHostMessage(v: unknown): v is HostMessage {
   if (typeof v !== 'object' || v === null) return false;
   const m = v as Record<string, unknown>;
-  return (
-    typeof m['type'] === 'string' &&
-    [
-      'welcome',
-      'roster',
-      'busy',
-      'round',
-      'received',
-      'vote',
-      'results',
-      'scores',
-      'ended',
-    ].includes(m['type'])
-  );
+  switch (m['type']) {
+    case 'welcome':
+      return typeof m['playerId'] === 'string';
+    case 'roster':
+      return Array.isArray(m['names']) && m['names'].every((n) => typeof n === 'string');
+    case 'busy':
+      return true;
+    case 'round':
+      return (
+        typeof m['roundIndex'] === 'number' &&
+        typeof m['roundCount'] === 'number' &&
+        typeof m['letter'] === 'string' &&
+        (typeof m['seconds'] === 'number' || m['seconds'] === null) &&
+        (typeof m['totalSeconds'] === 'number' || m['totalSeconds'] === null) &&
+        Array.isArray(m['categories']) &&
+        m['categories'].every(isRoundCategory)
+      );
+    case 'received':
+      return true;
+    case 'vote':
+      return (
+        typeof m['voteId'] === 'string' &&
+        typeof m['word'] === 'string' &&
+        isRoundCategory(m['category']) &&
+        Array.isArray(m['ownerIds']) &&
+        m['ownerIds'].every((id) => typeof id === 'string')
+      );
+    case 'results':
+      return (
+        typeof m['roundIndex'] === 'number' &&
+        typeof m['roundCount'] === 'number' &&
+        typeof m['letter'] === 'string' &&
+        Array.isArray(m['categories']) &&
+        m['categories'].every(isResultCategory) &&
+        Array.isArray(m['standings']) &&
+        m['standings'].every(isStandingRow) &&
+        typeof m['isUniqueScoring'] === 'boolean'
+      );
+    case 'scores':
+      return (
+        Array.isArray(m['rows']) &&
+        m['rows'].every(isStandingRow) &&
+        typeof m['winner'] === 'string'
+      );
+    case 'ended':
+      return true;
+    default:
+      return false;
+  }
 }
 
 /** How long to wait for the TURN-credentials endpoint before going STUN-only. */
@@ -686,6 +767,20 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
     let settled = false;
     let messageCb: ((msg: HostMessage) => void) | null = null;
     let closeCb: (() => void) | null = null;
+    // Once joined, any failure — the data connection closing, or the peer
+    // losing the broker/network — tells the room exactly once, even when one
+    // outage fires several related events (error, disconnected, close). The
+    // stale peer is torn down first, so it can't linger beside the new one the
+    // Join screen's reconnect loop opens (the host lets the new connection
+    // reclaim the seat by deviceId). A broker-only drop also lands here: the
+    // reconnect is cheap, and a dead network rarely closes the channel promptly.
+    let peerDown = false;
+    const firePeerDown = (): void => {
+      if (peerDown) return;
+      peerDown = true;
+      peer.destroy();
+      closeCb?.();
+    };
 
     const fail = (reason: JoinFailure): void => {
       if (settled) return;
@@ -700,8 +795,18 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
     }, JOIN_TIMEOUT_MS);
 
     peer.on('error', (err) => {
-      if (err.type === 'peer-unavailable') fail('not-found');
-      else fail('network');
+      if (!settled) {
+        if (err.type === 'peer-unavailable') fail('not-found');
+        else fail('network');
+        return;
+      }
+      firePeerDown();
+    });
+    peer.on('disconnected', () => {
+      if (settled) firePeerDown();
+    });
+    peer.on('close', () => {
+      if (settled) firePeerDown();
     });
 
     peer.on('open', () => {
@@ -735,6 +840,7 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
               closeCb = cb;
             },
             close: () => {
+              peerDown = true; // an intentional close is not a failure
               conn.close();
               peer.destroy();
             },
@@ -749,11 +855,11 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
       });
       conn.on('close', () => {
         if (!settled) fail('network');
-        else closeCb?.();
+        else firePeerDown();
       });
       conn.on('error', () => {
         if (!settled) fail('network');
-        else closeCb?.();
+        else firePeerDown();
       });
     });
   });

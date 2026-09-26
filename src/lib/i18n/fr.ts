@@ -148,6 +148,28 @@ export const fr: LanguagePack = {
     'score.playAgain': 'Rejouer',
     'score.home': 'Accueil',
     'score.stopAuto': 'Arrêter la suite automatique ({n})',
+    'score.changeSetup': 'Changer les réglages',
+    'share.action': 'Partager les résultats',
+    'share.heading': 'On a joué à Kategoria ! 🎉',
+    'share.copied': 'Copié — colle-le dans ta discussion !',
+    'share.failed': 'Impossible de partager sur cet appareil.',
+    'join.you': 'Toi',
+    'howto.title': 'Comment jouer',
+    'howto.play': 'On joue !',
+    'howto.points.none': 'Vide ou faux',
+    'howto.letter.title': 'Une lettre est tirée',
+    'howto.letter.body': 'Chaque manche commence par une lettre surprise.',
+    'howto.words.title': 'Remplis les catégories',
+    'howto.words.body':
+      'Écris un mot pour chaque catégorie qui commence par cette lettre : un animal, un aliment, une ville…',
+    'howto.clock.title': 'Bats la montre',
+    'howto.clock.body':
+      'Faites passer un téléphone, ou chacun rejoint avec le sien. Termine avant la fin du chrono !',
+    'howto.points.title': 'Marque des points',
+    'howto.points.body':
+      'Un mot que personne d’autre n’a écrit rapporte le plus. Le même mot qu’un autre rapporte moins.',
+    'howto.vote.title': 'Un doute ? On vote !',
+    'howto.vote.body': 'Les mots que le jeu ne connaît pas passent à un vote rapide du groupe.',
 
     'resume.title': 'Tes parties sauvegardées',
     'resume.empty.title': 'Pas encore de partie sauvegardée',

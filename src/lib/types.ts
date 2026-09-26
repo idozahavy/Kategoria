@@ -179,7 +179,8 @@ export type Screen =
   | 'review'
   | 'scoreboard'
   | 'learned'
-  | 'leaderboard';
+  | 'leaderboard'
+  | 'how-to';
 
 /** A language pack bundles UI strings + game content for one language. */
 export interface LanguagePack {

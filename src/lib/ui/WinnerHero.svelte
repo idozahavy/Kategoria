@@ -63,7 +63,7 @@
     z-index: var(--z-sticky);
   }
   .shrug {
-    font-size: calc(var(--font-size-display) * 1.6);
+    font-size: var(--size-illustration);
   }
   .headline {
     font-size: var(--font-size-display);

@@ -18,7 +18,7 @@ HTML version: `test-gaps-report.html` (gitignored).
 
 Gaps closed per phase: B 3 (GAP-026, GAP-027, GAP-025), D 3 (GAP-029, GAP-028, GAP-024), E 3 (GAP-023, GAP-022, GAP-030). Phase A had nothing to repair; Phase F had no writable regression (d66dc0a touches only NewGame.svelte); Phase G has no end-to-end harness.
 
-Reconciliation: seven files now read 100 % lines, and BUG-001 (`p2p.ts:194`, unvalidated host-message payloads on guests) and BUG-002 (`p2p.ts:656`) are still open; db.ts, avatar.ts and every Svelte screen remain untested because the repo has no IndexedDB fake and no DOM environment - one dev-dependency decision each.
+Reconciliation: seven files now read 100 % lines; BUG-001 (unvalidated host-message payloads on guests) and BUG-002 (peer-level error after join never closing the guest room) are fixed as of 2026-09-26 (see section 6); db.ts, avatar.ts and every Svelte screen remain untested because the repo has no IndexedDB fake and no DOM environment - one dev-dependency decision each.
 
 ## 1. Must-cover violations
 
@@ -79,17 +79,17 @@ The 20 gaps closed in the 2026-09-04/05 runs stay `done` in `.test-gaps-state.md
 - GAP-018 db.ts - `needs-harness`: no `fake-indexeddb` in the repo; this command never adds a test library.
 - GAP-019 Round / Join / Scoreboard / Review screens - `needs-harness`: no DOM environment or component-testing library. Also holds the only Phase F candidate (d66dc0a, speed-bonus default in NewGame.svelte).
 - GAP-021 avatar.ts - `needs-harness`: canvas + Image.
-- GAP-002 held case "peer-level error after a successful join reaches onClose" - `blocked-by-bug` BUG-002.
+- GAP-002 held case "peer-level error after a successful join reaches onClose" - was `blocked-by-bug` BUG-002, now covered by the BUG-002 regression tests in `p2p.guest.test.ts`.
 - GAP-011 held case "a chunk that fails to load is retried" - `needs-seam` (import.meta.glob loaders).
 
 Adding `fake-indexeddb` and `jsdom` as dev dependencies would unblock GAP-018 and GAP-019 in the next run.
 
 ## 6. Suspected bugs
 
-None new this run (none from ranking, none from rule 8 pre-break failures). Still open from 2026-09-04, both accepted in triage and awaiting a separate fix:
+None new this run (none from ranking, none from rule 8 pre-break failures). Both accepted in triage on 2026-09-04; fixed on 2026-09-26:
 
-- BUG-001 - src/lib/p2p.ts:194 - `isHostMessage` checks only that `type` is a known string; payload fields are used unvalidated on the guest device. Medium.
-- BUG-002 - src/lib/p2p.ts:656 - a peer-level 'error' after a successful join is swallowed, so onClose never fires. Low.
+- BUG-001 (fixed) - src/lib/p2p.ts - `isHostMessage` checked only that `type` was a known string; payload fields were used unvalidated on the guest device. Now validates every `HostMessage` variant's payload (types, array shapes, nested category/answer/standing-row fields), accepting `null` for fields the wire turns `undefined` into. Regression: `p2p.guest.test.ts` ("BUG-001: forwards every real message shape a host screen actually sends", "BUG-001: rejects host messages whose payload does not match the declared type", "BUG-001: isHostMessage rejects a payload that only has a valid type field").
+- BUG-002 (fixed) - src/lib/p2p.ts - a peer-level 'error' after a successful join was swallowed, so onClose never fired. `joinRoom` now also listens for `disconnected` and `close`, and fires `onClose` exactly once for the cascade. Regression: `p2p.guest.test.ts` ("BUG-002: a peer error after join fires onClose exactly once, even with a cascade", "BUG-002: a peer \"disconnected\" alone (no error) still closes the guest room", "BUG-002: intentionally closing the session does not also fire onClose from the peer").
 
 ## 7. Send to /cleanup
 

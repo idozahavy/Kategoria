@@ -9,6 +9,10 @@
   import { theme } from '../lib/theme';
   import Button from '../lib/ui/Button.svelte';
   import Chip from '../lib/ui/Chip.svelte';
+  import Wordmark from '../lib/ui/Wordmark.svelte';
+
+  /** The brand name as the wordmark spells it — the same in every language. */
+  const BRAND = 'KATEGORIA';
 
   let hasSaves = $state(false);
 
@@ -24,9 +28,10 @@
 </script>
 
 <div class="home">
-  <div class="logo">🎪</div>
-  <!-- dir="auto": the Latin wordmark keeps its "!" at the end inside RTL pages. -->
-  <h1 class="title" dir="auto">{$t('app.title')}</h1>
+  <h1 class="title">
+    <Wordmark text={BRAND} />
+    <span class="visually-hidden">{$t('app.title')}</span>
+  </h1>
   <p class="tagline">{$t('home.tagline')}</p>
 
   <div class="actions">
@@ -62,6 +67,7 @@
   </div>
 
   <div class="languages">
+    <Chip on={false} onclick={() => screen.set('how-to')}>📖 {$t('howto.title')}</Chip>
     <Chip on={false} onclick={() => screen.set('leaderboard')}>🏆 {$t('board.title')}</Chip>
     <Chip on={false} onclick={() => screen.set('learned')}>📚 {$t('learned.title')}</Chip>
   </div>
@@ -77,13 +83,8 @@
     gap: var(--space-3);
     text-align: center;
   }
-  .logo {
-    font-size: calc(var(--font-size-display) * 1.6);
-  }
   .title {
-    font-size: var(--font-size-display);
-    font-weight: var(--font-weight-display);
-    line-height: var(--line-height-display);
+    margin-block-end: var(--space-2);
   }
   .tagline {
     color: var(--color-muted);

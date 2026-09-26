@@ -1,6 +1,6 @@
 # Kategoria Design Scheme
 
-**Version: 1.0.3** · Established 2026-08-30 · Direction: **Candy Pop** (teal-lead)
+**Version: 1.0.4** · Established 2026-08-30 · Direction: **Candy Pop** (teal-lead)
 
 ## Decisions & rationale
 | ID | Decision | Rationale |
@@ -30,6 +30,7 @@
 - (none)
 
 ## Changelog
+- 1.0.4 (2026-09-26) — illustration size tokens (`--size-illustration` 64px for hero/empty/error emoji, `--size-illustration-sm` 48px for card/modal emoji such as the vote) replace the `calc(display * 1.6 / 1.2)` sizes.
 - 1.0.3 (2026-09-26) — font fix: the token named `Nunito` but the bundled face is `Nunito Variable`, so the self-hosted font never loaded (only machines with Nunito installed showed it). Token now uses the fontsource names and adds Rubik for Hebrew + Arabic.
 - 1.0.2 (2026-09-26) — `size` tokens for touch targets (`--size-touch` 48px, `--size-touch-chip` 44px) replace the hard-coded minimums in components and screens.
 - 1.0.1 (2026-09-19) — semantic `scrim` color token (modal backdrop, both themes).

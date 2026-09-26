@@ -228,9 +228,11 @@ export function buildBaseVars(flat) {
   if ('border.width' in flat) vars['--border-width'] = flat['border.width'];
   if ('border.edge-width' in flat) vars['--border-edge-width'] = flat['border.edge-width'];
 
-  // Size (touch targets)
-  if ('size.touch' in flat) vars['--size-touch'] = flat['size.touch'];
-  if ('size.touch-chip' in flat) vars['--size-touch-chip'] = flat['size.touch-chip'];
+  // Size (touch targets, illustration emoji)
+  for (const key of ['touch', 'touch-chip', 'illustration', 'illustration-sm']) {
+    const p = `size.${key}`;
+    if (p in flat) vars[`--size-${key}`] = flat[p];
+  }
 
   // Shadow
   if ('shadow.card' in flat) {

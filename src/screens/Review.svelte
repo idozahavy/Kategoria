@@ -559,7 +559,7 @@
     color: var(--color-muted);
   }
   .vote-emoji {
-    font-size: calc(var(--font-size-display) * 1.2);
+    font-size: var(--size-illustration-sm);
   }
   .vote-question {
     font-size: var(--font-size-h2);
