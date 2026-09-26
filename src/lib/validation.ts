@@ -252,6 +252,27 @@ const FACT_HINT: Record<string, RegExp> = {
 };
 
 /**
+ * Editors' notes to each other, pointing at another item by its id:
+ * "(for the taxon use Q223044)". Meaningless to a player.
+ */
+const WIKIDATA_NOTE = /\s*[(（][^()（）]*\bQ\d+\b[^()（）]*[)）]/gu;
+const WIKIDATA_ID = /\bQ\d+\b/u;
+
+/**
+ * Wikidata descriptions are terse fragments, often with a second clause after
+ * a semicolon ("large metal pot for cooking…; hanging or standing"), and read
+ * as cut off. Drop editors' notes, keep the first clause and make it a sentence.
+ */
+export function tidyFact(description: string, language: string): string {
+  const clause = (description.replace(WIKIDATA_NOTE, '').split(/[;；؛]/u)[0] ?? '')
+    .trim()
+    .replace(/[,،:]+$/u, '');
+  if (clause === '') return description.trim();
+  const sentence = clause.charAt(0).toLocaleUpperCase(language) + clause.slice(1);
+  return /[.!?…。]$/u.test(sentence) ? sentence : `${sentence}.`;
+}
+
+/**
  * A one-line "did you know" description of the word from Wikidata, in the
  * given language. Never throws; null when nothing kid-worthy is found.
  *
@@ -259,18 +280,6 @@ const FACT_HINT: Record<string, RegExp> = {
  * media senses are dropped and a description that reads like the category wins
  * over the search engine's own ranking.
  */
-/**
- * Wikidata descriptions are terse fragments, often with a second clause after
- * a semicolon ("large metal pot for cooking…; hanging or standing"), and read
- * as cut off. Keep the first clause and make it a sentence.
- */
-export function tidyFact(description: string, language: string): string {
-  const clause = (description.split(/[;；؛]/u)[0] ?? '').trim().replace(/[,،:]+$/u, '');
-  if (clause === '') return description.trim();
-  const sentence = clause.charAt(0).toLocaleUpperCase(language) + clause.slice(1);
-  return /[.!?…。]$/u.test(sentence) ? sentence : `${sentence}.`;
-}
-
 export async function wordFact(
   word: string,
   language: string,
@@ -303,6 +312,8 @@ export async function wordFact(
       const descLanguage = s.display?.description?.language;
       if (descLanguage !== undefined && descLanguage !== language) continue;
       if (FACT_REJECT.test(description)) continue;
+      // An item id outside a parenthesized note can't be tidied away.
+      if (WIKIDATA_ID.test(description.replace(WIKIDATA_NOTE, ''))) continue;
       candidates.push(description);
     }
     const hint = categoryId === undefined ? undefined : FACT_HINT[categoryId];

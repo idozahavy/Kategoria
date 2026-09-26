@@ -1,43 +1,74 @@
-# Player 1 — "rusher" persona playtest report
+# QA Player 1 - RUSHER (English, solo vs robot, 1-min timer, phone 375x812)
 
-**Setup:** Solo game, 1 player ("P1"), all defaults accepted (mode = "All categories, one letter", default category set, Normal timer 2:00, 3 rounds). Rushed through everything, mashed/double-clicked primary buttons, left most categories empty.
+Date: 2026-09-26
 
-## Verdict
+## Setup / path taken
 
-Got a full game to completion (Home → wizard → 3 configured rounds → Scoreboard) despite rushing, but round navigation is fragile under fast/double clicking and has at least one clear off-by-one bug.
+- NOTE: https://kategoria.pages.dev was blocked by the Browser pane's site permissions for my tab, so I played on the local dev server (http://localhost:5180, current main, same code). Tab was shared-origin with other testers, so localStorage/IndexedDB were shared: the landing page opened in Arabic (another tester's language choice) and showed "Continue game".
+- Path: Landing -> tap "English" -> New Game -> Add robot -> Next (blocked: "Everyone needs a name!") -> type name "Rush" -> Next -> Quick pick "Classic" -> Next -> "Fast (1 min)" -> Fewer rounds (3 -> 2) -> Start! -> "I'm ready!" -> typing.
+- Round 1 (letter T): filled 4/5, left "Thing" blank, let the timer expire.
+- Round 2 (letter I): filled all 5 (one wrong letter on purpose: "Banana"), tapped Done! early.
+- Final results -> Play again -> Round 1 of new game (letter E): 2/5 filled, Done! early -> review.
 
-## Bugs found (ranked by severity)
+## Bugs
 
-### 1. CRITICAL: Double-clicking "Next round" skips an entire round
+1. MED - Fun fact leaks raw Wikidata editorial text.
+   - Steps: solo vs robot, letter T, robot answers "tortoise" for Animal; review screen "Did you know?" card.
+   - Expected: a kid-friendly sentence about tortoises.
+   - Actual: "Reptile with a shell, including tortoises, terrapins, and sea turtles (for the taxon use Q223044)." - contains an internal Wikidata instruction and a Q-id, and describes turtles (order Testudines) rather than tortoises. The source text should be filtered for parentheticals like "(for the ... use Q...)" / any "Q\d+" token.
+2. MED - Name field placeholder "Me" suggests a default name, but it is empty and blocks Next.
+   - Steps: New Game -> Add robot -> Next.
+   - Expected: player 1 defaults to a name (placeholder "Me" implies it) or the field is focused/highlighted.
+   - Actual: "Everyone needs a name!" error; also after adding the robot the placeholder changes from "Me" to "Name 1". Rusher is stopped on the first screen.
+3. LOW - Tapping a saved-player chip (e.g. "Noa") did nothing visible.
+   - Steps: player setup screen, tap "Noa" chip with an empty name row.
+   - Expected: Noa fills the empty row / is added.
+   - Actual: aria-pressed stays false, name field stays empty, no feedback. (Possibly because rows were full - no message either way.)
+4. LOW - Two different timer values in the DOM at the same time.
+   - Steps: round 1 with timer running, get page text near the end.
+   - Actual: text contains both "0:08" and "0:10" (e.g. header pill + a floating/sticky duplicate out of sync by 2 s). Worth checking the two timer renderings use the same source.
+5. LOW (possible) - After scrolling the review screen down on the phone, the top ~60% of the viewport was blank background with the cards only in the lower part (screenshot). May be a mid-scroll/entrance-animation capture, but worth a re-check with /visual-check.
 
-On the Review screen after Round 1, I double-clicked the "Next round" button (as instructed, to simulate an impatient kid mashing buttons). Result: the game jumped straight from "Round 1 of 3" to **"Round 3 of 3"**, completely skipping Round 2. No round-2 words were ever collected for that round, and the round counter/state clearly does not guard against a second click firing before the UI transitions/disables the button. This is a real point-scoring integrity bug, not just cosmetic — a rushing kid mashing the "next" button (very plausible for this persona) will short the game a full round without any indication anything went wrong.
+## UX confusion
 
-**Repro:** On the Review screen, click "Next round" twice in quick succession (before the next round's input screen has rendered). Expect: advance one round. Actual: advances two rounds.
+- Solo vs robot still shows "Player 1 of 2 - Rush, it's your turn! Pass the device - no peeking!" before every round. There is nobody to pass to; for solo it is an extra tap and confusing copy.
+- Landing -> typing takes about 10 taps (language, New Game, Add robot, Next, name, Next, Classic, Next, timer, Start, I'm ready). For a rusher, a "Quick play vs robot" button on the home screen would get a game going in 1-2 taps.
+- Categories screen: nothing is preselected and "Next" is not in the interactive list until a quick pick is chosen (fine, but no hint why).
+- The two setup mode cards ("One shared screen" / "Phones join in") and saved-player chips are buttons with no accessible name (read_page shows bare "button"). The five answer textboxes on the play screen also have no accessible name (the category label is not linked to the input).
+- Standings on the review screen show three bare numbers per player ("+35 40 75") with no labels; a kid will not know which is round score vs previous vs total.
+- Mid-game review shows both "Next round" and "See scores" - unclear whether "See scores" ends the game.
+- End screen has both "One more round!" and "Play again" - near-identical meaning; a rusher cannot tell the difference.
+- "Game settings" gear shows only in round 1, gone in round 2 (probably intentional, but inconsistent).
+- A stray "A" text node appears at the end of the play screen text (under the Done! button) - unclear what it is.
+- Timer end with a blank field: went straight to review, blank shows "-" with no points and no label. Works, but there was no visible "Time's up!" moment captured in text.
+- Robot: in the timed round it only answered 1/5 when time ran out, but in rounds where I hit Done! early it answered 4-5/5 instantly. Robot strength depends on whether you finish early - feels odd (finishing early helps the robot).
+- Robot answers are all lowercase ("istanbul", "emmanuel", "iris") while player answers keep capitals - looks sloppy next to each other, especially for names/cities.
+- Robot "insect" for Animal and "iris" for Name are borderline answers but accepted.
 
-### 2. HIGH: "Round 4 of 3" — off-by-one, last round doesn't end the game
+## Visual issues
 
-After completing what should have been the final round (Round 3 of 3, due to the skip bug above this was actually only the 2nd round played), clicking "Next round" on the Review screen did **not** end the game — it advanced to a screen labeled **"Round 4 of 3"** and let me play another full round with a new letter. Only after submitting that round did the Review screen finally show a "See scores" button instead of "Next round".
+- See bug 5 (blank area on scrolled review screen).
+- End screen: winner avatar, crown, confetti look good; scores count up from 0 (text snapshot showed "0 75"). Fine.
+- Play screen at 375 px: letter tile + timer pill + five category cards fit; Done! button sits at the very bottom edge (partially cut at 812 px height until scrolled).
 
-This suggests the round-completion check compares against the wrong bound (off-by-one) or the "is this the last round" logic doesn't account for the actual current round reliably. Whether or not the earlier skip bug contributed to this exact instance, the label "Round 4 of 3" is user-visibly nonsensical on its own and should never be reachable — a kid will be confused seeing a round number exceed the stated total.
+## Fun-fact observations
 
-### 3. MEDIUM: No visible feedback that a submitted word doesn't match the round's letter
+- Round 1: "tortoise" - leaked "(for the taxon use Q223044)" and describes turtles (bug 1).
+- Round 2: "irish stew - Lamb or mutton and root vegetable stew native to Ireland." - fine, English, makes sense.
+- Round 3: "elephant seal - Genus of mammals." - correct but boring/not a fun fact for kids.
+- Name category: my names (Tom, Isabella, Elizabeth) and robot names (iris, emmanuel) never got a fun fact - correct. Note "iris" is also a flower; it correctly got no fact because it was in Name.
+- All facts were in English. Facts were always about a robot word, never about my words.
 
-On Round 1, I typed "Zebra" and "Zucchini" for a round whose letter was "P". The input screen showed a small "Starts with 'P'?" hint under each field, but nothing blocked or strongly warned before submitting — I hit "Done!" and it went straight through to the Review screen, where the words were silently scored "Not counted · 0". For a rushing kid this is probably fine (don't block them), but the wrong-letter answer being accepted with no active resistance (e.g., no confirm-you-sure-this-is-wrong nudge) combined with a fairly subtle inline hint means many kids may not learn why they got 0 points until the Review screen, if they even check.
+## Console errors
 
-### 4. LOW: Buttons don't appear to disable while a transition is in-flight
+- Checked twice (after round 1 review and after round 3 review): no errors or warnings, only Vite debug "connecting/connected".
 
-Related to bug #1 — primary action buttons ("Next round", "Done!", "Start!") remained clickable (not disabled, no loading state observed) immediately after being clicked, at least long enough for a same-tick second click to register as a second, separate action. Recommend disabling the button (or debouncing) the instant it's pressed, until the resulting state transition completes.
+## Timings
 
-## Timing / flow notes
+- Landing -> typing answers: about 12 actions/taps including one blocked Next (roughly 30-40 s for a real fast player).
+- Timer: 1:00 counted down correctly; expiry moved to review automatically within ~1-2 s.
+- Done! -> review: instant (under 3 s including robot answers and fun fact).
 
-- Home → New Game wizard → Start took ~4 fast interactions (name, mode/categories, points/timer, Start). No unnecessary friction; a rusher can complete setup very quickly.
-- One player name field is required before "Next" advances on the players step (silently no-ops if empty) — not a bug, but worth noting there's no error message shown when Next is pressed with an empty required field; it just does nothing, which could read as "broken" to an impatient kid.
-- No handoff overlay was shown between rounds/players in this solo 1-player game — went straight from setup into Round 1. Good, this is the fast path.
-- Timer counted down as expected (2:00 default "Normal" shown as e.g. 1:44, 1:25 etc. after actions).
-- Reached final Scoreboard successfully: "Player 1 wins! 🎉" with 20 points (from the two "Unique!" 10-point answers: "Apple" and "Banana"), plus 0 points from the mis-lettered Round 1 answers and whatever the skipped/extra round contributed.
+## Fun score
 
-## Fun/UX notes
-
-- Category emoji icons (🐶🍕🏙️🧑📦) are a nice, clear kid-friendly touch for quick scanning.
-- "Unique! · 10" and "Not counted · 0" scoring labels on the Review screen are simple and easy to read at a glance.
-- Overall the happy-path flow (no double-clicking) felt fast and low-friction, appropriate for a rusher/kid persona — the round-count bugs are the main thing standing between this and a solid rushed-play experience.
+6/10 - Rounds are snappy and the end screen is celebratory, but setup is too many taps for a quick solo game, "pass the device" copy in solo is confusing, and fun facts range from broken (Wikidata Q-id) to dry ("Genus of mammals.").

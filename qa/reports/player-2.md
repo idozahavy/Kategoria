@@ -1,67 +1,58 @@
-# Playtest report — Player 2 ("completionist")
+# QA Player 2 - Completionist (Hebrew, pass-and-play, 3 players, desktop 1440x900)
 
-**Date:** 2026-08-31
-**Setup:** 3 players (Maya, Dad, Zoe), classic mode (all categories, one letter), categories: Animal, Food, City, Name, Thing (default 5 selected), unique scoring (10 unique / 5 shared), no timer, 2 rounds.
+## Setup / path taken
 
-## Flow walkthrough
+- NOTE: https://kategoria.pages.dev was blocked by the browser pane's site permissions for my tab. I tested the local dev server at http://localhost:5180 instead (same repo, clean HEAD 8ca489b). Results should match the live build unless production differs from HEAD.
+- Home -> switched language to Hebrew (html dir=rtl, lang=he) -> opened "איך משחקים" (how-to) -> "יאללה, משחקים!".
+- Who plays: "מסך אחד משותף", players דנה, יוסי, Tom (mixed Hebrew/Latin name on purpose).
+- Categories: default Classic (חיה, אוכל, עיר, שם, דומם) + פרי + custom "דבר בבית ספר". Also tried adding empty custom (ignored, fine) and a custom "חיה" duplicate (accepted - see bug).
+- Points/timer: unique-words scoring, no timer, 2 rounds, advanced: validation "בדיקה חכמה" (hybrid), online category check on, fun facts on, speed bonus on.
+- Round 1 letter כ, round 2 letter ב. Real words plus one gibberish (כגכג), one blank, one wrong-letter word (אבטיח on ב).
+- Voting, round results, standings, final results, share results (navigator.share stubbed to capture payload), change setup (שינוי הגדרות) and verified every setting is preserved.
 
-1. Home → New Game. Step 1 (players): first input pre-filled placeholder "Name 1", "Add player" correctly appends new inputs. Added Maya, Dad, Zoe with no friction.
-2. Step 2 (mode): "All categories, one letter" was already selected by default, with a clear helper line "The usual way — fill every category!" under it. Category chips pre-selected 5 of 10 (Animal, Food, City, Name, Thing) by default — reasonable default, though it's not obvious to a new user _why_ those 5 and not e.g. Country/Sport. Chips are icon + label, easy to read.
-3. Step 3 (points & timer): "Unique word 10 · same as someone 5" was pre-selected and clearly explained inline — good, a kid/parent can understand the scoring rule without leaving the screen. Timer chips (No timer / Relaxed / Normal / Fast) — Normal was the default; switched to "No timer" successfully. Rounds stepper (−/+) worked, moved 3 → 2 in one click.
-4. Start! → per-player handoff overlay ("🙈 Maya, it's your turn!" / OK) appeared correctly before each player's turn each round, preventing peeking — good design for pass-and-play with kids.
-5. Round screen shows round counter ("Round 1 of 2"), big letter tile, and one input per category with icon+label. Straightforward.
-6. Review screen ("Let's check the words!") auto-scored every word with no manual dictionary/group-vote modal needed in either round (all test words matched the bundled word lists) — validation was fast and did not interrupt the flow.
-7. Scoreboard at the end lists players sorted by score with a crown on the winner and a "Zoe wins! 🎉" banner. "Play again" and "Home" buttons present.
+## Bugs
 
-## Scoring verification (the main thing I was asked to check)
+1. MED - Custom category can duplicate a built-in category.
+   - Steps: Categories screen -> type "חיה" in "הוספת קטגוריה משלכם" -> הוספה.
+   - Expected: rejected (or silently selects the built-in 🐶 חיה).
+   - Actual: a second "חיה" chip is added next to the selected built-in one; the round would have two identical rows.
+2. MED - Vote question has broken Hebrew gender/grammar.
+   - Steps: submit an unknown word so it goes to voting.
+   - Expected: grammatical Hebrew, e.g. "האם "כלמנטינה" היא פרי אמיתי?" / neutral phrasing.
+   - Actual: "האם "כלמנטינה" זו פרי אמיתית?" (פרי is masculine) and with the custom category: "האם "בריסטול" זו דבר בבית ספר אמיתית?" - the feminine template is glued to any category name. Suggest a gender-neutral template such as "האם "X" מתאים לקטגוריה: Y?".
+3. LOW - Change-setup gear (⚙️ "הגדרות המשחק") is visible on the fill screen in round 1 but missing in round 2 (only "חזרה" is present). If intentional, it's inconsistent; if not, the mid-game entry point disappears.
+4. LOW - Blank answer on round results shows only "—" with no badge/score, while every other row shows "label · points" (e.g. "אות לא נכונה · 0", "נפסלה בהצבעה · 0"). Expected e.g. "ריק · 0" (that string already exists in how-to).
+5. LOW - Round results screen keeps the heading "בואו נבדוק את המילים!" (the voting heading) above the scored results; a results heading would be clearer.
+6. LOW (probably environment) - Final results scores showed "0" for every player while the tab was in the background; the real total was only in the visually-hidden live region. Once the tab was rendered the counters showed 118/98/74. Count-up relies on requestAnimationFrame; worth making the final value render even if rAF never fires (e.g. print final value first when document.hidden).
 
-### Round 1 — letter G
+## UX confusion
 
-| Category        | Maya                                                                    | Dad                      | Zoe                        |
-| --------------- | ----------------------------------------------------------------------- | ------------------------ | -------------------------- |
-| Animal          | Goat → **5** (Same word)                                                | Goat → **5** (Same word) | Giraffe → **10** (Unique!) |
-| Food            | Grapes → **10**                                                         | Garlic → **10**          | Gravy → **10**             |
-| City            | Berlin → **0** (Not counted — correctly flagged as not starting with G) | Geneva → **10**          | Glasgow → **10**           |
-| Name            | Gina → **5** (Same word)                                                | Gina → **5** (Same word) | George → **10**            |
-| Thing           | Glass → **10**                                                          | Guitar → **10**          | Gate → **10**              |
-| **Round total** | **30**                                                                  | **40**                   | **50**                     |
+- Speed bonus with "בלי טיימר": allowed; in pass-and-play the bonus is per-turn speed, but nothing tells players that. Scores like 9/10/8 for identical-quality words look random to kids.
+- Standings row shows three numbers "+58 60 118" with no labels (delta, previous, total) - readable once you know, but the bare "60" is ambiguous.
+- Mode cards ("מסך אחד משותף" / "טלפונים מצטרפים", "כל הקטגוריות..." / "קטגוריה אחת...") and the scoring cards have no aria-pressed / accessible selected state (the chips do). Screen readers can't tell which is chosen.
+- Change setup -> "מי משחק?" shows the whole recent-players roster (on this shared device incl. names from other sessions like "Rush", "Noa", an HTML-injection test name rendered safely as text, and a name that is just U+FFFD "�"). Fine functionally, but a long roster pushes the actual 3 selected players far down.
+- "יוסי ניצח/ה! 🎉" - slash gender form is acceptable but a bit clunky for kids; could use "המנצח/ת" card or "כל הכבוד, יוסי!".
 
-All values matched expectations exactly: duplicate valid word → 5/5, unique valid word → 10, word not starting with the round letter → 0 ("Not counted"). Math per row verified by hand.
+## RTL / translation issues
 
-### Round 2 — letter K
+- dir=rtl and lang=he applied; no horizontal overflow at 1440 (scrollWidth 1425 < 1440).
+- Round results: names right, score badges left - correct mirroring (screenshot checked).
+- "ייחודית! · 10" - punctuation and middle dot render correctly in RTL.
+- Mixed "Tom" name inside Hebrew rows renders correctly.
+- Share text: "שיחקנו Kategoria! 🎉 / 👑 יוסי · 118 / 2. דנה · 98 / 3. Tom · 74" - "2." at the start of an RTL line will render as ".2" in many chat apps; consider "2) " or "🥈" style markers, and "Kategoria" (Latin brand) is fine.
+- No English UI leftovers found on: home, how-to, player setup, categories, points/timer, advanced settings, handoff, fill, voting, results, standings, final, change setup. Only grammar issue is bug 2.
 
-| Category        | Maya                        | Dad              | Zoe               |
-| --------------- | --------------------------- | ---------------- | ----------------- |
-| Animal          | Koala → **5**               | Koala → **5**    | Kangaroo → **10** |
-| Food            | Kiwi → **10**               | Ketchup → **10** | Kale → **10**     |
-| City            | Paris → **0** (Not counted) | Kyoto → **10**   | Kingston → **10** |
-| Name            | Kevin → **5**               | Kevin → **5**    | Kate → **10**     |
-| Thing           | Kite → **10**               | Key → **10**     | Kettle → **10**   |
-| **Round total** | **30**                      | **40**           | **50**            |
+## Fun-fact observations
 
-Again exactly as engineered/expected.
+- Round 1: "הידעתם? כפר סבא - עיר בישראל." Hebrew, good (short but correct).
+- Round 2: "הידעתם? בקבוק - מכל חלול, או לחלופין כלי קיבול בעל פייה צרה." Hebrew, good (dictionary tone, a bit dry for kids).
+- No fun fact was ever shown for a שם (name) category word (כרמית, כנרת, בני, ברק, בתיה were all candidates). PASS.
+- No English description appeared. PASS.
 
-### Final scoreboard
+## Console errors
 
-- Zoe: 100 (expected 50+50 = 100) ✓
-- Dad: 80 (expected 40+40 = 80) ✓
-- Maya: 60 (expected 30+30 = 60) ✓
+- Checked 3 times (after round 1, after final/change-setup). Only "[vite] connecting..." / "[vite] connected." debug lines. No errors or warnings.
 
-All totals add up correctly across both rounds. Scoring logic (unique=10, shared=5, invalid=0) is implemented correctly and consistently, and the "not counted" reason is shown per word rather than just a bare 0, which is good for a kid to understand why they lost points.
+## Fun score
 
-## UI text / wording notes
-
-- All copy read naturally and was easy to understand; nothing a child would misread.
-- "Let's check the words!" / "Same word · 5" / "Unique! · 10" / "Not counted · 0" labels on the review screen are clear and appropriately encouraging (exclamation point on "Unique!" makes it feel like a reward rather than just a number).
-- Handoff overlay copy ("🙈 <Name>, it's your turn!") is friendly and clearly signals "look away" via the emoji, good for pass-and-play trust with siblings.
-- No typos found in any screen visited (home, wizard steps 1–3, round play, review, scoreboard).
-- Minor: on the mode-selection step, the default category chip selection (Animal/Food/City/Name/Thing chosen, Country/Plant/Job/Sport/Color unchosen) isn't explained — a first-time parent might wonder why only half are pre-checked. Not a bug, just a small clarity gap.
-
-## Bugs / issues found
-
-- No functional or scoring bugs found in this run. Word validation, duplicate detection, invalid-letter detection, and score aggregation all worked correctly across 2 rounds x 3 players x 5 categories (30 data points).
-- Only soft/cosmetic note: the reason for the default category subset (5 of 10 pre-selected) is not surfaced to the user — could confuse a parent setting this up for the first time, but not a defect.
-
-## Verdict
-
-Game mechanics and scoring math are solid and match the documented rules exactly; no bugs encountered in a full 3-player, 2-round classic game.
+7/10 - Smooth, fully Hebrew flow, fast pass-and-play handoffs and a nice "הידעתם?" card; points lost for the clunky gendered vote question (kids will notice), the unexplained speed-bonus point differences, and small result-screen inconsistencies.

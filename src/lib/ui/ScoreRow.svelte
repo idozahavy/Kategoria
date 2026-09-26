@@ -13,6 +13,8 @@
     from = undefined,
     delta = undefined,
     meLabel = undefined,
+    deltaLabel = undefined,
+    scoreLabel = undefined,
   }: {
     name: string;
     score: number;
@@ -24,6 +26,10 @@
     delta?: number;
     /** Set only on the viewer's own row (guest phones): the translated "You" pill. */
     meLabel?: string;
+    /** Screen-reader wording for the "+N" chip ("This round: +N"); translated. */
+    deltaLabel?: string;
+    /** Screen-reader wording for the total ("Total: N"); translated. */
+    scoreLabel?: string;
   } = $props();
 
   /** How long the count-up runs. */
@@ -45,12 +51,15 @@
     <span class="you">{meLabel}</span>
   {/if}
   {#if delta !== undefined && delta > 0}
-    <span class="delta">+{delta}</span>
+    <span class="delta">
+      <span aria-hidden={deltaLabel !== undefined}>+{delta}</span>
+      {#if deltaLabel !== undefined}<span class="visually-hidden">{deltaLabel}</span>{/if}
+    </span>
   {/if}
   <!-- The count-up is for the eyes; screen readers get the final number once,
        and again whenever it changes (a new round's standings). -->
   <span class="score" aria-hidden="true">{Math.round(shown.current)}</span>
-  <span class="visually-hidden" aria-live="polite">{score}</span>
+  <span class="visually-hidden" aria-live="polite">{scoreLabel ?? score}</span>
 </div>
 
 <style>

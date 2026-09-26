@@ -97,6 +97,8 @@ export type HostMessage =
       standings: StandingRow[];
       /** 'unique' scoring: a valid word is labelled "Unique!", otherwise "Good word!". */
       isUniqueScoring: boolean;
+      /** Speed bonus on: later finishers lost points, and the phones say why. */
+      hasSpeedScoring?: boolean;
     }
   | { type: 'scores'; rows: StandingRow[]; winner: string }
   | { type: 'ended' };
@@ -310,7 +312,8 @@ export function isHostMessage(v: unknown): v is HostMessage {
         m['categories'].every(isResultCategory) &&
         Array.isArray(m['standings']) &&
         m['standings'].every(isStandingRow) &&
-        typeof m['isUniqueScoring'] === 'boolean'
+        typeof m['isUniqueScoring'] === 'boolean' &&
+        (m['hasSpeedScoring'] === undefined || typeof m['hasSpeedScoring'] === 'boolean')
       );
     case 'scores':
       return (

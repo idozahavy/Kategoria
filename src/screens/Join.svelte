@@ -3,6 +3,13 @@
 
   import { AVATAR_EMOJI, fileToAvatar } from '../lib/avatar';
   import { invalidReason, matchesLetter } from '../lib/game';
+  import {
+    forgetGuestSeat,
+    readGuestDraft,
+    readGuestSeat,
+    rememberGuestSeat,
+    saveGuestDraft,
+  } from '../lib/guestsession';
   import { t } from '../lib/i18n';
   import {
     type GuestSession,
@@ -77,17 +84,11 @@
 
   // Remember who/where this tab joined so a reload (or dropped connection)
   // can jump straight back into the running game — the host keeps the seat.
-  const GUEST_SESSION_KEY = 'categories-guest';
-  try {
-    const saved = sessionStorage.getItem(GUEST_SESSION_KEY);
-    if (saved !== null) {
-      const s = JSON.parse(saved) as { code?: string; name?: string; avatar?: string };
-      code = s.code ?? '';
-      name = s.name ?? '';
-      avatar = s.avatar;
-    }
-  } catch {
-    // storage unavailable — start with an empty form
+  const savedSeat = readGuestSeat();
+  if (savedSeat !== null) {
+    code = savedSeat.code;
+    name = savedSeat.name;
+    avatar = savedSeat.avatar;
   }
   // Arrived by scanning the host's QR code — the room code rides in the URL.
   const scannedCode = new URLSearchParams(location.search).get('join');
@@ -95,24 +96,21 @@
   // Consume the param: a later reload should land wherever the player left off,
   // not be dragged back to the join screen (the code stays prefilled above).
   if (scannedCode !== null) history.replaceState(history.state, '', location.pathname);
+  // This tab is still seated in that room (a reload, or back to Home and in
+  // again): rejoin right away instead of asking for the code and name again.
+  // A scanned code for a different room means a new join instead.
+  const shouldRejoin =
+    savedSeat !== null &&
+    (scannedCode === null ||
+      scannedCode === '' ||
+      normalizeRoomCode(scannedCode) === savedSeat.code);
 
   function rememberSession(): void {
-    try {
-      sessionStorage.setItem(
-        GUEST_SESSION_KEY,
-        JSON.stringify({ code: normalizeRoomCode(code), name: name.trim(), avatar }),
-      );
-    } catch {
-      // storage unavailable — rejoin just won't be prefilled
-    }
+    rememberGuestSeat({ code: normalizeRoomCode(code), name: name.trim(), avatar });
   }
 
   function forgetSession(): void {
-    try {
-      sessionStorage.removeItem(GUEST_SESSION_KEY);
-    } catch {
-      // storage unavailable — nothing to forget
-    }
+    forgetGuestSeat();
   }
   let round = $state<RoundMsg | null>(null);
   let vote = $state<VoteMsg | null>(null);
@@ -181,9 +179,17 @@
         return;
       }
       if (!isReplay) {
-        answers = {};
-        submitted = false;
-        sentAnswers = null;
+        // Rejoined after a reload: the words typed (or sent) before it are
+        // still this round's.
+        const draft = readGuestDraft(normalizeRoomCode(code), msg.roundIndex);
+        answers = { ...draft?.answers };
+        submitted = draft !== null && draft.sent !== null;
+        sentAnswers = draft?.sent ?? null;
+        if (sentAnswers) {
+          session?.send({ type: 'answers', roundIndex: msg.roundIndex, answers: sentAnswers });
+          phase = 'waiting';
+          return;
+        }
       }
       phase = 'entry';
     } else if (msg.type === 'vote') {
@@ -293,6 +299,42 @@
       phase = 'error';
     }
   }
+
+  /**
+   * Back into the room this tab was seated in. The host hands the same seat
+   * back and replays the current screen. A room that is gone falls back to
+   * the prefilled form; a network hiccup keeps retrying like a dropped
+   * connection does.
+   */
+  async function rejoin(): Promise<void> {
+    phase = 'connecting';
+    try {
+      wireSession(await joinRoom(code, name.trim(), avatar));
+      phase = 'lobby'; // until the host's replay says where the game is
+    } catch (e) {
+      if (phase !== 'connecting') return; // the player left meanwhile
+      if (e instanceof Error && e.message === 'not-found') {
+        forgetSession();
+        codeError = $t('join.error.notFound');
+        phase = 'form';
+        return;
+      }
+      void reconnect();
+    }
+  }
+
+  // Keep this round's words in the tab, so a reload rejoins with them.
+  $effect(() => {
+    const r = round;
+    if (!r || (phase !== 'entry' && phase !== 'waiting')) return;
+    void submitted; // re-save once the words are sent
+    saveGuestDraft({
+      code: normalizeRoomCode(code),
+      roundIndex: r.roundIndex,
+      answers: { ...answers },
+      sent: sentAnswers,
+    });
+  });
 
   function submitAnswers(): void {
     const r = round;
@@ -435,11 +477,22 @@
   const resultsTitle = $derived(
     results ? roundTitleFor(results.roundIndex, results.roundCount) : '',
   );
+  /** "Join a game" only until the game is on; then the header follows it. */
+  const headerTitle = $derived.by(() => {
+    // Reconnecting mid-game keeps the round's title: the player is still in it.
+    if ((phase === 'entry' || phase === 'waiting' || phase === 'reconnecting') && round) {
+      return roundTitle;
+    }
+    if (phase === 'vote' || phase === 'vote-own' || phase === 'voted') return $t('review.title');
+    if (phase === 'results' && results) return resultsTitle;
+    if (phase === 'scores') return $t('score.title');
+    return $t('join.title');
+  });
   const voteQuestion = $derived(
     vote
       ? $t('review.vote.question')
           .replace('{word}', vote.word)
-          .replace('{category}', vote.category.label.toLocaleLowerCase())
+          .replace('{category}', vote.category.label)
       : '',
   );
 
@@ -449,10 +502,12 @@
     if (status === 'shared') return $t('review.shared');
     return $t(`review.invalid.${invalidReason(word, results?.letter ?? '')}`);
   }
+
+  if (shouldRejoin) void rejoin();
 </script>
 
 <div class="join">
-  <TopBar title={$t('join.title')} onback={leave} backLabel={$t('setup.back')} />
+  <TopBar title={headerTitle} onback={leave} backLabel={$t('setup.back')} />
 
   {#if phase === 'form'}
     <div class="content">
@@ -490,6 +545,9 @@
     <Spinner label={$t('join.connecting')} />
   {:else if phase === 'reconnecting'}
     <Spinner emoji="📶" label={$t('join.reconnecting')} />
+    <div class="reconnect-actions">
+      <Button variant="ghost" onclick={leave}>{$t('join.leave')}</Button>
+    </div>
   {:else if phase === 'lobby'}
     <div class="center">
       <div class="emoji">🎉</div>
@@ -510,7 +568,6 @@
         />
       {/if}
     </div>
-    <p class="round-title">{roundTitle}</p>
     <div class="cards">
       {#each round.categories as cat, i (cat.id)}
         {@const val = answers[cat.id] ?? ''}
@@ -521,6 +578,7 @@
           </div>
           <TextInput
             bind:value={() => answers[cat.id] ?? '', (v) => (answers[cat.id] = v)}
+            ariaLabel={cat.label}
             enterkeyhint={i === round.categories.length - 1 ? 'done' : 'next'}
             maxlength={MAX_ANSWER_LENGTH}
             onkeydown={(e) => onAnswerKeydown(e, i)}
@@ -566,7 +624,6 @@
     <div class="letter-row">
       <LetterTile letter={results.letter} />
     </div>
-    <p class="round-title">{resultsTitle}</p>
     <div class="cards">
       {#each results.categories as cat (cat.id)}
         <Card>
@@ -588,6 +645,9 @@
           </ul>
         </Card>
       {/each}
+      {#if results.hasSpeedScoring === true}
+        <p class="speed-note">{$t('review.speedNote')}</p>
+      {/if}
       <Card>
         <p class="standings-title">🏆 {$t('review.standings')}</p>
         <div class="score-rows">
@@ -600,6 +660,8 @@
               colorIndex={row.colorIndex}
               avatar={row.avatar}
               meLabel={row.name === myName ? $t('join.you') : undefined}
+              deltaLabel={$t('score.deltaLabel').replace('{n}', String(row.delta))}
+              scoreLabel={$t('score.totalLabel').replace('{n}', String(row.score))}
             />
           {/each}
         </div>
@@ -841,6 +903,15 @@
     margin-inline: calc(-1 * var(--space-4));
     padding-inline: var(--space-4);
     padding-block: var(--space-2);
+  }
+  .reconnect-actions {
+    display: flex;
+    justify-content: center;
+  }
+  .speed-note {
+    text-align: center;
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
   }
   .round-title {
     text-align: center;

@@ -237,6 +237,21 @@ describe('joined session', () => {
     expect(seen).toEqual([]);
   });
 
+  it('accepts the speed-bonus flag on results only as a boolean', () => {
+    const results = {
+      type: 'results',
+      roundIndex: 0,
+      roundCount: 3,
+      letter: 'A',
+      categories: [],
+      standings: [],
+      isUniqueScoring: true,
+    };
+    expect(isHostMessage({ ...results, hasSpeedScoring: true })).toBe(true);
+    expect(isHostMessage(results)).toBe(true); // an older host leaves it out
+    expect(isHostMessage({ ...results, hasSpeedScoring: 'yes' })).toBe(false);
+  });
+
   it('BUG-001: isHostMessage rejects a payload that only has a valid type field', () => {
     expect(isHostMessage({ type: 'round' })).toBe(false);
     expect(isHostMessage({ type: 'scores' })).toBe(false);

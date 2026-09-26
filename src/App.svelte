@@ -4,6 +4,7 @@
   import { trackScreen } from './lib/analytics';
   import { loadGame } from './lib/db';
   import { screenForGame } from './lib/game';
+  import { readGuestSeat } from './lib/guestsession';
   import { pack, persistLanguage, uiLanguage } from './lib/i18n';
   import { reopenRoom, setActiveRoom } from './lib/p2p';
   import { persistActiveGame, readActiveGameId } from './lib/session';
@@ -100,8 +101,11 @@
   // game is already autosaved and reachable via Resume.
   onMount(() => {
     // Opened from a scanned QR code (?join=CODE) — jump straight to joining.
+    // A tab still seated in a phones-join room rejoins it; that beats a saved
+    // hosted game, which belongs to whichever tab hosted it.
     let restorePending = false;
     if (new URLSearchParams(location.search).get('join') !== null) screen.set('join');
+    else if (readGuestSeat() !== null) screen.set('join');
     else if (restoreGameId !== null) {
       restorePending = true;
       void restoreActiveGame(restoreGameId);

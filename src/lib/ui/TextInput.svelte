@@ -6,6 +6,7 @@
     error = '',
     disabled = false,
     label = '',
+    ariaLabel = '',
     enterkeyhint,
     maxlength,
     oninput,
@@ -18,6 +19,8 @@
     error?: string;
     disabled?: boolean;
     label?: string;
+    /** Accessible name when the visible label sits outside the field (e.g. a card header). */
+    ariaLabel?: string;
     /** Mobile keyboards label the Enter key with this action. */
     enterkeyhint?: 'next' | 'done' | 'go' | 'enter' | 'send' | 'search';
     maxlength?: number;
@@ -34,6 +37,7 @@
     bind:this={ref}
     bind:value
     {placeholder}
+    aria-label={ariaLabel === '' ? undefined : ariaLabel}
     {disabled}
     {enterkeyhint}
     {maxlength}

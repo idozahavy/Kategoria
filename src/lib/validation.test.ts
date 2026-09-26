@@ -132,6 +132,11 @@ describe('wordFact sense picking', () => {
     await expect(wordFact('Dates', 'en', 'food')).resolves.toBeNull();
   });
 
+  it('skips a description that names another item outside a note', async () => {
+    stubSearch('tortoise', ['see Q223044 for the taxon', 'land-dwelling reptile']);
+    await expect(wordFact('tortoise', 'en', 'animal')).resolves.toBe('Land-dwelling reptile.');
+  });
+
   it("has no facts for the 'name' category", async () => {
     stubSearch('jordan', ['male given name', 'country in the Middle East']);
     await expect(wordFact('Jordan', 'en', 'name')).resolves.toBeNull();
@@ -156,6 +161,17 @@ describe('tidyFact', () => {
   it('leaves finished sentences and scripts without case alone', () => {
     expect(tidyFact('A bird!', 'en')).toBe('A bird!');
     expect(tidyFact('עוף דורס', 'he')).toBe('עוף דורס.');
+  });
+
+  it("drops Wikidata editors' notes that point at another item", () => {
+    expect(
+      tidyFact(
+        'reptile with a shell, including tortoises, terrapins, and sea turtles (for the taxon use Q223044)',
+        'en',
+      ),
+    ).toBe('Reptile with a shell, including tortoises, terrapins, and sea turtles.');
+    // An ordinary parenthesis stays.
+    expect(tidyFact('small bird (songbird)', 'en')).toBe('Small bird (songbird).');
   });
 
   it('drops a dangling comma and handles the Arabic semicolon', () => {

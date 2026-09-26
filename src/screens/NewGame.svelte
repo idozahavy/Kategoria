@@ -19,7 +19,7 @@
     startNextRound,
     TIMER_OPTIONS,
   } from '../lib/game';
-  import { availablePacks, categoryName, t, uiLanguage } from '../lib/i18n';
+  import { availablePacks, categoryName, getPack, t, tn, uiLanguage } from '../lib/i18n';
   import { createRoom, type GuestInfo, type HostRoom, setActiveRoom } from '../lib/p2p';
   import { game, screen, setupTemplate } from '../lib/stores';
   import type { PlayerProfile } from '../lib/types';
@@ -246,6 +246,8 @@
 
   const allCategories: CategoryDef[] = $derived([...builtinCategories, ...customCategories]);
   const playerCount = $derived(playStyle === 'remote' ? guestList.length : players.length);
+  /** Robots don't count: one person against robots plays under "Me" like a solo game. */
+  const humanCount = $derived(players.filter((p) => p.isBot !== true).length);
   const canProceedCategories = $derived(selectedCategoryIds.length > 0);
   const stepTitle = $derived.by(() => {
     if (step === 1) return $t('setup.players');
@@ -304,8 +306,9 @@
   }
 
   /**
-   * Add the typed category and select it (a name already in the list is
-   * re-selected instead of duplicated). False when the name was rejected.
+   * Add the typed category and select it (a name already in the list, built-in
+   * or custom, is re-selected instead of duplicated). False when the name was
+   * rejected.
    */
   function addCustomCategory(): boolean {
     const name = newCategoryName.trim();
@@ -318,9 +321,15 @@
       return false;
     }
     categoryError = '';
-    const existing = customCategories.find(
-      (c) => c.customName?.toLocaleLowerCase() === name.toLocaleLowerCase(),
-    );
+    const folded = name.toLocaleLowerCase();
+    // A built-in one under its own name (in the menu's or the game's language)
+    // is the same category: two identical rows would split every answer.
+    const existing =
+      builtinCategories.find((c) =>
+        [$categoryName(c), getPack(gameLanguage).categoryNames[c.id] ?? ''].some(
+          (n) => n.toLocaleLowerCase() === folded,
+        ),
+      ) ?? customCategories.find((c) => c.customName?.toLocaleLowerCase() === folded);
     if (existing) {
       if (!selectedCategoryIds.includes(existing.id)) {
         selectedCategoryIds = [...selectedCategoryIds, existing.id];
@@ -340,7 +349,8 @@
       if (guestList.length === 0) return $t('setup.error.noGuests');
     } else if (players.length > 1) {
       const names = players.map((p) => p.name.trim());
-      if (names.some((n) => n === '')) return $t('setup.error.emptyName');
+      // A lone person playing the robots may skip their name, like a solo player.
+      if (humanCount > 1 && names.some((n) => n === '')) return $t('setup.error.emptyName');
       if (new Set(names.map((n) => n.toLocaleLowerCase())).size !== names.length) {
         return $t('setup.error.duplicateName');
       }
@@ -452,6 +462,7 @@
           type="button"
           class="mode-card"
           class:selected={playStyle === 'local'}
+          aria-pressed={playStyle === 'local'}
           onclick={selectLocal}
         >
           <span class="mode-title">{$t('setup.style.local')}</span>
@@ -461,6 +472,7 @@
           type="button"
           class="mode-card"
           class:selected={playStyle === 'remote'}
+          aria-pressed={playStyle === 'remote'}
           onclick={() => void selectRemote()}
         >
           <span class="mode-title">{$t('setup.style.remote')}</span>
@@ -500,7 +512,7 @@
               </button>
               <TextInput
                 bind:value={player.name}
-                placeholder={players.length === 1
+                placeholder={humanCount === 1 && player.isBot !== true
                   ? $t('setup.soloName')
                   : `${$t('setup.playerName')} ${i + 1}`}
                 oninput={() => (stepError = '')}
@@ -546,7 +558,7 @@
         {#if guestList.length === 0}
           <p class="section-hint">{$t('lobby.waiting')}</p>
         {:else}
-          <p class="joined-count">{$t('lobby.joined').replace('{n}', String(guestList.length))}</p>
+          <p class="joined-count">{$tn('lobby.joined', guestList.length)}</p>
           <div class="roster">
             {#each guestList as g (g.playerId)}
               <span class="roster-chip">
@@ -563,6 +575,7 @@
           type="button"
           class="mode-card"
           class:selected={mode === 'classic'}
+          aria-pressed={mode === 'classic'}
           onclick={() => (mode = 'classic')}
         >
           <span class="mode-title">{$t('setup.mode.classic')}</span>
@@ -572,6 +585,7 @@
           type="button"
           class="mode-card"
           class:selected={mode === 'single'}
+          aria-pressed={mode === 'single'}
           onclick={() => (mode = 'single')}
         >
           <span class="mode-title">{$t('setup.mode.single')}</span>
@@ -641,6 +655,7 @@
             type="button"
             class="mode-card"
             class:selected={voteMode === 'devices'}
+            aria-pressed={voteMode === 'devices'}
             onclick={() => (voteMode = 'devices')}
           >
             <span class="mode-title">📱 {$t('setup.voting.devices')}</span>
@@ -650,6 +665,7 @@
             type="button"
             class="mode-card"
             class:selected={voteMode === 'host'}
+            aria-pressed={voteMode === 'host'}
             onclick={() => (voteMode = 'host')}
           >
             <span class="mode-title">📺 {$t('setup.voting.host')}</span>
@@ -665,6 +681,7 @@
             type="button"
             class="mode-card"
             class:selected={scoring === 'unique'}
+            aria-pressed={scoring === 'unique'}
             onclick={() => (scoring = 'unique')}
           >
             <span class="mode-title">{$t('setup.scoring.unique')}</span>
@@ -674,6 +691,7 @@
             type="button"
             class="mode-card"
             class:selected={scoring === 'simple'}
+            aria-pressed={scoring === 'simple'}
             onclick={() => (scoring = 'simple')}
           >
             <span class="mode-title">{$t('setup.scoring.simple')}</span>

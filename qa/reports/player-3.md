@@ -1,73 +1,71 @@
-# Playtest Report — Player 3 ("chaos")
+# QA Player 3 - CHAOS (Arabic RTL + English, pass-and-play, tablet 768x1024)
 
-Target: http://localhost:5173 (Svelte SPA, no backend)
-Session date: 2026-08-31
+## Setup / path taken
 
-## Bugs found
+- The live site https://kategoria.pages.dev was blocked by the browser pane's site permissions for my tab. I tested the local dev server instead (http://localhost:5180, then http://127.0.0.1:5180). The git tree was clean at HEAD 8ca489b, so this should be the same code as the live site.
+- localhost:5180 was shared with other testers (same origin, so the same IndexedDB and localStorage). Their games kept overwriting `categories-active-game`, so my reload tests there resumed _their_ games. I moved to 127.0.0.1:5180, which is a separate origin with isolated storage, for the main run.
+- Path on localhost: Arabic UI (dir=rtl) -> New game -> player attacks -> points/timer -> round 1 (letter ل) with chaos answers -> reload. Resume picked up another tester's game (see observations).
+- Path on 127.0.0.1: Arabic -> New game -> players علي + Bob -> category attacks (removed all, added a custom one) -> 1 round, no timer -> reload mid-round -> Done clicked repeatedly -> voting -> review -> reload mid-review -> browser back -> switched to English -> new game (letter R) with wrong-letter, accented and mixed-script answers.
+- About 34 browser actions and 0 screenshots. Most driving was done by DOM clicks, because the background tab often did not render for coordinate clicks.
 
-### 1. [CRITICAL] Spam-clicking "Next" on the empty player-setup step skips ALL wizard validation and steps, letting you start a real game with 0 players
+## Bugs
 
-**Repro:**
+### HIGH - Clicking "Done" more than once skips player 2's turn and copies player 1's answers onto player 2
 
-1. Home → New Game. Land on "Who is playing?" with 0 player rows (no players added, no "Add player" clicked).
-2. Click the "Next" button 5 times rapidly (fired synchronously in a tight loop).
-3. Result: the wizard silently skips the "Who is playing?" step (never blocked despite 0 players) **and** the entire "How do you want to play? / Pick categories" step, landing directly on "Points & timer" (step 3 of 3).
-4. Click "Start!" with no timer/mode/category chosen explicitly.
-5. A real round starts: `Round 1 of 3`, letter tile shown, all 5 default categories, and the app auto-invents a player named **"Player 1"**.
-6. The game is fully playable end-to-end: I answered all 3 rounds, reached the Review screen, and finished at the Scores screen showing "Player 1 wins! 🎉" with a real score (120 pts).
+- Steps: pass-and-play with 2 players (Arabic, 1 round, no timer). Player 1 fills in both categories ("زرافة" in each). Click "انتهيت!" (Done) 3 times quickly. A double or triple tap on a tablet does the same thing.
+- Expected: player 1 is submitted, then the "pass the device" screen appears for player 2 (Bob), who types his own answers.
+- Actual: the game goes straight to "Let's check the words!" voting. Bob never got a turn. The IndexedDB save shows Bob with exactly player 1's words (`68b0 animal "زرافة"`, `68b0 <custom> "زرافة"`). The review then scores them as "same word · 5" for both players. So the wrong score comes from a skipped turn plus leaked answers.
+- Likely cause (not verified in source): the round screen stays mounted when the active player changes, so the later clicks submit the still-filled draft as the next player. It needs a guard against clicking Done again during the hand-off, and the draft should be cleared or keyed per player.
 
-This means the minimum-player-count check and the mode/category-selection step can both be bypassed entirely by rapid/spam navigation input, producing a "valid" completed game with a phantom single player. A single accidental double/triple-tap on "Next" (easy for a kid to do) could trigger this.
+### MED - Two tabs of the app (same origin) hijack each other's resume
 
-**Severity:** High — silently corrupts the intended flow, produces confusing solo games, and the resulting save/scoreboard state looks legitimate.
+- Steps: open the app in two tabs and start a different game in each. Reload tab A.
+- Expected: tab A resumes its own game.
+- Actual: tab A resumes whichever game wrote `localStorage['categories-active-game']` last. That was another tester's game, in English, with Hebrew words. My game was still in IndexedDB (drafts included) but could only be reached by editing the key by hand. The UI language setting is also shared between tabs, so my Arabic tab reloaded in English. This is uncommon for real families, but it is silent and looks like lost progress.
 
-### 2. [MEDIUM] Completed games are never removed from "Resume Game", and each round transition creates a new/duplicate save entry instead of updating one slot
+### LOW - A long custom category name is rejected without any message
 
-**Repro:**
+- Steps: category screen -> type a name about 100 characters long into "أضف فئتك" (with an `<img ...>` prefix) -> click "إضافة" (Add).
+- Expected: the category is added, or a message explains the length limit.
+- Actual: nothing happens and no error is shown. A short name ("<b>pets</b>") was added fine. I did not check whether a length cap is the cause.
 
-1. Play a game to completion (reach the Scores screen).
-2. Go Home → "Resume Game".
-3. The finished game still appears as a resumable save (e.g. "Player 1 — Round 3 of 3"), and clicking "Continue" on it just reopens the final Scores screen (not a crash, but pointless clutter).
-4. Additionally, over the course of one single playthrough (rounds 1→2→3, browser back once in the middle), the save list accumulated **3 separate entries** for the same game ("Round 1 of 3", "Round 2 of 3", "Round 3 of 3", all under "Player 1"), instead of one entry that gets updated in place.
+### LOW - Timer and round choices are not remembered for the next game
 
-**Severity:** Medium — not data-corrupting, but the saved-games list will grow unbounded across a family's play sessions, and finished games clutter the "Resume" list forever (no cleanup path in the UI besides manual per-item Delete).
+- I chose "no timer" and 1 round in the Arabic game. The next "New Game" (English) came back at 2:00 and 3 rounds. The custom category _was_ remembered, so what gets remembered is inconsistent. It may be intended.
 
-### 3. [LOW] Browser back-button leaves the app entirely (loses in-memory game state, no history integration)
+### LOW - Answer inputs have no maxLength
 
-**Repro:**
+- Answer fields have `maxLength=-1`. A 246-character answer was accepted and saved in full to IndexedDB. It did not crash anything, but nothing stops huge strings from going into saves or the P2P payload.
 
-1. Start a game, get to "Round 2 of 3" (mid-round, timer running, categories showing).
-2. Press the browser Back button (via `navigate: back`).
-3. The tab goes to `about:blank` — completely outside the app (no site loaded at all), not to a previous app screen.
-4. Pressing Forward reloads the app fresh at the Home screen — the in-progress round is gone from memory (though it did survive via a background autosave — see Bug #2 for how that autosave is duplicated/never cleared).
+## Robustness results
 
-**Severity:** Low/Medium — the app doesn't push any history entries, so any accidental back-swipe/back-click (very plausible on a touch device mid-round) yanks the player out of the game to a blank page. It's not a data-loss disaster only because of the autosave, but the UX is jarring and confusing for a kid-facing app.
+| Attack                                                                   | Result                                                                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Player name only spaces                                                  | Blocked: "الجميع يحتاج إلى اسم!" (everyone needs a name). PASS                                               |
+| Duplicate player names                                                   | Blocked: "لاعبان لهما الاسم نفسه" (two players have the same name). PASS                                     |
+| HTML/XSS player name `<b>x</b><img src=x onerror=alert(1)>`              | Shown as literal text on the pass screen, no img element in the DOM, no alert. PASS                          |
+| Emoji + mixed-script name "🦄 سارةSara"                                  | Accepted and shown correctly. Profile key is stored lowercased. PASS                                         |
+| Maximum players (clicked Add 20 times)                                   | Capped at 8 and the Add button becomes disabled. PASS                                                        |
+| Minimum players (clicked Remove repeatedly)                              | Stops at 1 player with no Remove button left. PASS                                                           |
+| Remove all categories                                                    | Next becomes disabled. PASS (no explanatory hint, but acceptable)                                            |
+| Custom category containing HTML `<b>pets</b>`                            | Shown as literal text everywhere, including the voting question. PASS                                        |
+| Double-click Next / Start / "Let's go" (setup)                           | Each moved forward exactly one screen. PASS                                                                  |
+| Double/triple-click Done in a round                                      | **FAIL, HIGH bug above**                                                                                     |
+| Double-click Yes in voting                                               | No double-advance seen. PASS                                                                                 |
+| Answer of 246 characters                                                 | Accepted and saved, no crash. The review layout was not checked visually                                     |
+| Answer `<img src=x onerror=alert(1)>`                                    | Saved as text, no execution. PASS                                                                            |
+| Emoji-only answer, digits-only answer, Arabic with diacritics (لَيْمُون) | Accepted as input. Their scoring was not reached because of the shared-origin resume issue                   |
+| Same word in every category                                              | Accepted. Scored 5 each as "same word" once the bug copied it to the other player                            |
+| Wrong starting letter (Zebra, Émile on R)                                | Auto-scored "Wrong letter · 0". PASS                                                                         |
+| Reload mid-round (isolated origin)                                       | Resumes on the "pass the device" screen for the current player. Same letter, drafts restored. PASS           |
+| Reload mid-review                                                        | Resumes on the final results/podium screen with scores intact (the "show results" step was effectively done) |
+| Browser back after reload                                                | Went back to the home screen without an error or stuck state. PASS                                           |
+| Switch language (Arabic -> English) on home                              | dir flips rtl -> ltr and all labels update. PASS. I did not test switching during an active round            |
 
-### 4. [LOW] No duplicate-player-name validation
+## Console errors
 
-**Repro:** In "Who is playing?", enter two players both named "Same" and click Next — it's accepted with no warning and advances normally.
-**Impact:** During pass-and-play handoff and on the scoreboard, two identically-named players would be indistinguishable. Minor, but worth a friendly warning given the kid-friendly design goal.
+- None. `read_console_messages` with onlyErrors returned nothing after every group of attacks, on both origins.
 
-### 5. [LOW] Custom category add gives no feedback on rejection
+## Fun score
 
-**Repro:** On "Pick categories", open "Add your own", type an 80+ character name (`"XXXXXXXXXX...XXXXXXXXXX Category"`), and submit (both via Enter key and via the confirm button).
-**Result:** The category is silently NOT added — the input just sits there / closes with no error message, toast, or visual indicator of why it failed. Also tested an empty submission — also silently no-ops.
-**Impact:** Minor UX gap — kids (or parents) won't know why their custom category didn't get added.
-
-## Things that worked correctly (no bug)
-
-- **XSS check passed.** Typed `<b>bold</b>` as an answer; on the Review screen it renders as the literal text `<b>bold</b>` (verified via `innerHTML` — properly escaped, not injected as markup). No HTML/script injection found anywhere I tested.
-- **Input sanitization on answers is solid:** leading/trailing-space answer (" Fox ") was trimmed and scored correctly; pure-number answer ("123") was correctly rejected ("Not counted · 0"); a 100-character gibberish string ("AAAA...") was correctly rejected as not a real word.
-- One nitpick: a bare single letter matching the round's required letter (e.g. answering "F" for a category on an "F" round) was accepted and scored as "Unique! · 10" — arguably too lenient, but may be intentional design; flagging for awareness rather than as a bug.
-- **Hebrew / RTL toggle works correctly.** Switching the in-wizard language selector to עברית (Hebrew) instantly translated all visible strings and flipped `<html dir>` to `rtl` / `lang` to `he`. Switching back to English correctly restored `ltr` / `en`. No layout breakage observed in either direction.
-- **Join Game screen** is a clearly-labeled "coming soon" stub ("Playing on your own phone is coming soon! For now, share one screen together.") with just a Home button — nothing to break there.
-- **Zero console errors** were thrown during the entire chaotic session (including during the wizard-skip bug reproduction), despite the invalid states reached. The app degrades ungracefully at the UX/data level but does not hard-crash.
-- Resuming an in-progress save correctly restored the right round number, letter, and categories (timer resets to full, which is reasonable).
-
-## Testing notes / tooling caveats
-
-- The app's UI has a noticeable one-tick reactivity lag under rapid programmatic interaction (e.g., clicking "Add player" twice in the same script only visibly added one row until a subsequent read). This might just be an artifact of scripted/synthetic events rather than a real-user-facing bug, but combined with Bug #1 it suggests the wizard's step-validation guard is not synchronous/robust against rapid input.
-- Saves in IndexedDB are shared across testers. I created and later attempted to delete 3 "Player 1" saves from my own testing; the delete-confirmation action was blocked by the environment's permission system as a destructive-data operation, so those 3 stray "Player 1" saves (timestamps 07:37, 07:39, 07:41 on 8/31) are still present in the shared save list — safe to delete manually since they're clearly from this bug-repro run.
-
-## Verdict
-
-The game is fun and the core word-checking/answer-validation logic (trimming, escaping, dictionary rejection) is genuinely solid — no XSS, no crashes. But the setup wizard's step-navigation guard has a real hole: rapid/accidental "Next" clicks can blow past all validation and start a phantom-player game, and the save-list is not being cleaned up or consolidated, which will get messy over real-world use.
+6/10. Arabic RTL looks consistent, the validation messages are friendly and kid-appropriate, and the HTML escaping is solid everywhere I tried. The Done double-tap bug hurts pass-and-play badly, though: tablets get accidental double taps all the time, and a skipped turn with copied answers ruins the round. I did not see a "did you know" fact in my rounds.

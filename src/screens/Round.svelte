@@ -9,7 +9,13 @@
   import { playDing, playTick, vibrate } from '../lib/sound';
   import { game, screen, updateGame } from '../lib/stores';
   import { TIME_UP_BUZZ, timerBuzz } from '../lib/timer';
-  import type { GameState, RoundState, ScoringSystem, ValidationMode } from '../lib/types';
+  import type {
+    GameState,
+    PlayerDef,
+    RoundState,
+    ScoringSystem,
+    ValidationMode,
+  } from '../lib/types';
   import Avatar from '../lib/ui/Avatar.svelte';
   import Button from '../lib/ui/Button.svelte';
   import Card from '../lib/ui/Card.svelte';
@@ -34,7 +40,8 @@
   // Pass-the-device panel at round entry when several players share the screen
   // (remote guests each have their own device — no handoff needed).
   onMount(() => {
-    handoffOpen = !isRemote && players.length > 1;
+    const first = activePlayer;
+    if (!isRemote && players.length > 1 && first !== null && needsHandoff(first)) openHandoff();
     const room = isRemote ? getActiveRoom() : null;
     if (!room) return;
     return room.onGuestMessage((playerId, msg) => {
@@ -61,7 +68,16 @@
   const turnStartedAt = $derived(round?.turnStartedAt ?? null);
 
   let answers = $state<Record<string, string>>({});
+  /**
+   * Whose words `answers` holds. The prefill below swaps them in only after
+   * the turn changes, so a second Done that lands first (a double tap) must
+   * not submit the previous player's words as the next player's.
+   */
+  let answersPid: string | null = null;
   let handoffOpen = $state(false);
+  /** When the pass-the-device panel opened: a tap meant for Done can't dismiss it. */
+  let handoffOpenedAt = 0;
+  const HANDOFF_ARM_MS = 700;
   let showLeaveConfirm = $state(false);
   let showSettings = $state(false);
   let showTimeUp = $state(false);
@@ -85,6 +101,7 @@
     void roundIndex;
     const pid = activePid;
     if (!pid) return;
+    answersPid = pid;
     answers = untrack(() => {
       const r = round;
       const prefill: Record<string, string> = {};
@@ -132,7 +149,7 @@
   $effect(() => {
     const pid = activePid;
     const words = { ...answers };
-    if (!pid || isRemote || roundPhase !== 'entry') return;
+    if (!pid || pid !== answersPid || isRemote || roundPhase !== 'entry') return;
     const id = setTimeout(() => {
       saveDraft(pid, words);
     }, DRAFT_SAVE_MS);
@@ -305,12 +322,32 @@
     if (movedToReview) {
       screen.set('review');
     } else {
-      handoffOpen = true;
+      const next = players[players.findIndex((p) => p.id === pid) + 1];
+      if (next && needsHandoff(next)) openHandoff();
+      else handoffOpen = false;
     }
   }
 
+  /**
+   * The robot's turn shows its "thinking" panel; a person gets "pass the
+   * device" only when someone else is playing on this screen too.
+   */
+  function needsHandoff(p: PlayerDef): boolean {
+    return p.isBot === true || players.filter((x) => x.isBot !== true).length > 1;
+  }
+
+  function openHandoff(): void {
+    handoffOpenedAt = Date.now();
+    handoffOpen = true;
+  }
+
+  function dismissHandoff(): void {
+    if (Date.now() - handoffOpenedAt < HANDOFF_ARM_MS) return;
+    handoffOpen = false;
+  }
+
   function submitTurn() {
-    if (!$game || !round || !activePlayer) return;
+    if (!$game || !round || !activePlayer || answersPid !== activePlayer.id) return;
     commitTurn(activePlayer.id, answers);
   }
 
@@ -453,9 +490,7 @@
           {$t('round.yourTurn').replace('{name}', activePlayer?.name ?? '')}
         </p>
         <p class="handoff-hint">{$t('round.passHint')}</p>
-        <Button variant="primary" block onclick={() => (handoffOpen = false)}
-          >{$t('round.ready')}</Button
-        >
+        <Button variant="primary" block onclick={dismissHandoff}>{$t('round.ready')}</Button>
       {/if}
     </div>
   {:else}
@@ -529,6 +564,7 @@
             <TextInput
               bind:value={() => answers[catId] ?? '', (v) => (answers[catId] = v)}
               bind:ref={answerInputs[i]}
+              ariaLabel={cat ? $categoryName(cat) : catId}
               enterkeyhint={i === round.categoryIds.length - 1 ? 'done' : 'next'}
               onkeydown={(e) => onAnswerKeydown(e, i)}
               error={val !== '' && !matchesLetter(val, round.letter)

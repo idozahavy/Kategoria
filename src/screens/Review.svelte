@@ -91,6 +91,9 @@
   /** "Unique!" only means something when words are compared between players. */
   const isUniqueScoring = $derived($game?.settings.scoring === 'unique' && players.length > 1);
 
+  /** Later finishers lose a point per word; say so, or the numbers look random. */
+  const hasSpeedScoring = $derived($game?.settings.hasSpeedScoring === true && players.length > 1);
+
   /** Best totals so far, top first, with what each player gained this round. */
   const standings = $derived.by(() => {
     if (!$game || !round) return [];
@@ -302,6 +305,7 @@
         isWinner: false,
       })),
       isUniqueScoring,
+      hasSpeedScoring,
     });
   }
 
@@ -364,7 +368,7 @@
   const voteQuestion = $derived.by(() => {
     if (!currentVote) return '';
     const cat = categoryFor(currentVote.categoryId);
-    const catName = cat ? $categoryName(cat).toLocaleLowerCase() : currentVote.categoryId;
+    const catName = cat ? $categoryName(cat) : currentVote.categoryId;
     return $t('review.vote.question')
       .replace('{word}', currentVote.word)
       .replace('{category}', catName);
@@ -425,6 +429,9 @@
           </div>
         </Card>
       {/if}
+      {#if hasSpeedScoring}
+        <p class="speed-note">{$t('review.speedNote')}</p>
+      {/if}
       <Card>
         <p class="standings-title">🏆 {$t('review.standings')}</p>
         <div class="standings">
@@ -436,6 +443,8 @@
               delta={s.delta}
               colorIndex={s.player.colorIndex}
               avatar={s.player.avatar}
+              deltaLabel={$t('score.deltaLabel').replace('{n}', String(s.delta))}
+              scoreLabel={$t('score.totalLabel').replace('{n}', String(s.score))}
             />
           {/each}
         </div>
@@ -523,6 +532,11 @@
   .standings-title {
     font-weight: var(--font-weight-subheading);
     margin-block-end: var(--space-2);
+  }
+  .speed-note {
+    text-align: center;
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
   }
   .standings {
     display: flex;
