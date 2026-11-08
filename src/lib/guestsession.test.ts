@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  forgetGuestDraft,
   forgetGuestSeat,
   readGuestDraft,
   readGuestSeat,
   rememberGuestSeat,
   saveGuestDraft,
+  tabId,
 } from './guestsession';
 
 /** A Map-backed sessionStorage: Node has none. */
@@ -107,5 +109,27 @@ describe('guest draft', () => {
       JSON.stringify({ code: 'ABCD', roundIndex: 0, answers: {}, sent: ['ant'] }),
     );
     expect(readGuestDraft('ABCD', 0)).toBeNull();
+  });
+
+  it("a round's results spend its draft, so a rematch's first round starts empty", () => {
+    const sent = { animal: 'ant' };
+    saveGuestDraft({ code: 'ABCD', roundIndex: 0, answers: sent, sent });
+    forgetGuestDraft();
+    expect(readGuestDraft('ABCD', 0)).toBeNull();
+  });
+});
+
+describe('tab id', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is short and stays the same across reloads of one tab', () => {
+    const store = stubSessionStorage();
+    const id = tabId();
+    expect(id).toMatch(/^[0-9a-f]{8}$/);
+    expect(tabId()).toBe(id);
+    store.clear(); // another tab
+    expect(tabId()).not.toBe(id);
   });
 });

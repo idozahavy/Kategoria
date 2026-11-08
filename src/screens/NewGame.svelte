@@ -873,7 +873,8 @@
     background: var(--color-surface);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-pill);
-    padding: var(--space-1);
+    /* No padding: a padded badge reaches the avatar's centred letter. */
+    padding: 0;
   }
   .player-remove {
     min-inline-size: var(--size-touch);

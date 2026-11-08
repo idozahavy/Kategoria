@@ -9,6 +9,8 @@
     ariaLabel = '',
     enterkeyhint,
     maxlength,
+    autocapitalize,
+    spellcheck,
     oninput,
     onkeydown,
   }: {
@@ -24,6 +26,9 @@
     /** Mobile keyboards label the Enter key with this action. */
     enterkeyhint?: 'next' | 'done' | 'go' | 'enter' | 'send' | 'search';
     maxlength?: number;
+    /** Codes and other non-words: start the phone keyboard in capitals, no autocorrect. */
+    autocapitalize?: 'off' | 'characters' | 'words' | 'sentences';
+    spellcheck?: boolean;
     oninput?: (e: Event) => void;
     onkeydown?: (e: KeyboardEvent) => void;
   } = $props();
@@ -41,6 +46,8 @@
     {disabled}
     {enterkeyhint}
     {maxlength}
+    {autocapitalize}
+    {spellcheck}
     {oninput}
     {onkeydown}
   />

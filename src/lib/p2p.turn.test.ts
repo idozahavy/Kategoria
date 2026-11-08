@@ -38,6 +38,8 @@ async function openRoom(): Promise<FakePeer> {
 }
 
 const HOUR_MS = 60 * 60 * 1000;
+/** Host peers also carry the room's broker token. */
+const ANY_TOKEN = expect.any(String) as unknown;
 
 describe('TURN credentials for the peer', () => {
   it('asks /turn-credentials once and hands the ice servers to every peer afterwards', async () => {
@@ -54,8 +56,8 @@ describe('TURN credentials for the peer', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/turn-credentials');
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'POST' });
     expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('body');
-    expect(first.options).toEqual({ config: { iceServers } });
-    expect(second.options).toEqual({ config: { iceServers } });
+    expect(first.options).toEqual({ config: { iceServers }, token: ANY_TOKEN });
+    expect(second.options).toEqual({ config: { iceServers }, token: ANY_TOKEN });
   });
 
   it('asks again once the remembered credentials near their TTL', async () => {
@@ -71,7 +73,7 @@ describe('TURN credentials for the peer', () => {
     vi.setSystemTime(Date.now() + 31 * 60_000);
     const later = await openRoom();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(later.options).toEqual({ config: { iceServers } });
+    expect(later.options).toEqual({ config: { iceServers }, token: ANY_TOKEN });
   });
 
   it('sends the Turnstile token as JSON when the bot check is configured', async () => {

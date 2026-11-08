@@ -8,8 +8,11 @@
  * second tab on the same device is a different player (or the host).
  */
 
+import { newId } from './game';
+
 const SESSION_KEY = 'categories-guest';
 const DRAFT_KEY = 'categories-guest-draft';
+const TAB_KEY = 'categories-tab-id';
 
 export interface GuestSeat {
   code: string;
@@ -91,4 +94,22 @@ export function readGuestDraft(code: string, roundIndex: number): GuestDraft | n
 
 export function saveGuestDraft(draft: GuestDraft): void {
   write(DRAFT_KEY, draft);
+}
+
+/**
+ * The round's results are in: its words are spent. Without this, a rematch in
+ * the same room (whose first round has the same index) would send them again.
+ */
+export function forgetGuestDraft(): void {
+  remove(DRAFT_KEY);
+}
+
+/** A short id for this tab that survives its reloads (a second tab's device-id variant). */
+export function tabId(): string {
+  const saved = read(TAB_KEY);
+  // Bounded: it rides in the device id, which the host caps at 64 characters.
+  if (typeof saved === 'string' && /^[\w-]{1,16}$/.test(saved)) return saved;
+  const id = newId().slice(0, 8);
+  write(TAB_KEY, id);
+  return id;
 }

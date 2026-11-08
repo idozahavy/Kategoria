@@ -208,6 +208,16 @@ export const fr: LanguagePack = {
     'join.error.network': 'Connexion impossible — vérifie ta connexion et réessaie.',
     'join.error.hostLeft': 'La partie est terminée.',
     'join.error.disconnected': 'Connexion perdue ! Touche « Réessayer » pour revenir.',
+    'join.error.started':
+      'Cette partie a déjà commencé. Seuls ses joueurs peuvent revenir, avec le même nom.',
+    'join.error.codeLetters':
+      'Les codes de salle n’utilisent que les lettres de A à Z, comme ABCD.',
+    'join.error.codeLength': 'Les codes de salle ont 4 lettres — regarde le grand écran !',
+    'room.offline':
+      'Salle hors ligne — reconnexion… Les téléphones ne peuvent pas rejoindre pour l’instant.',
+    'room.leaveConfirm':
+      'Quitter la partie ? Tous les téléphones seront déconnectés. Tu pourras la reprendre plus tard.',
+    'room.leave': 'Quitter',
 
     'setup.voting': 'Vote des mots',
     'setup.voting.devices': 'Voter sur les téléphones',

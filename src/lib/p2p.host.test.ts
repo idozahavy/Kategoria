@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createRoom, getActiveRoom, type HostRoom, setActiveRoom } from './p2p';
+import {
+  createRoom,
+  getActiveRoom,
+  type HostRoom,
+  onActiveRoomStatus,
+  type RoomStatus,
+  setActiveRoom,
+} from './p2p';
 import { FakeConn, FakePeer, flush, sentTypes, stubNoTurnEndpoint } from './p2p.test-helpers';
 
 vi.mock('peerjs', async () => {
@@ -19,6 +26,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   setActiveRoom(null);
 });
+
+/** A host peer's options without TURN: only the room's broker token. */
+const STUN_ONLY = { token: expect.any(String) as unknown };
 
 /** Open a room on the fake broker and hand back the room plus its peer. */
 async function openRoom(): Promise<{ room: HostRoom; peer: FakePeer }> {
@@ -48,7 +58,7 @@ describe('createRoom', () => {
     const { room, peer } = await openRoom();
     expect(room.code).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/);
     expect(peer.id).toBe(`kidcategories-v1-${room.code}`);
-    expect(peer.options).toEqual({});
+    expect(peer.options).toEqual(STUN_ONLY);
   });
 
   it('retries with a fresh peer when the broker reports the id as taken', async () => {
@@ -223,25 +233,25 @@ describe('TURN lookup failures (never remembered)', () => {
     vi.stubGlobal('fetch', fetchMock);
     const first = await openRoom();
     const second = await openRoom();
-    expect(first.peer.options).toEqual({});
-    expect(second.peer.options).toEqual({});
+    expect(first.peer.options).toEqual(STUN_ONLY);
+    expect(second.peer.options).toEqual(STUN_ONLY);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('treats a malformed body or a thrown fetch as no TURN', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(Response.json({ iceServers: [{ urls: 42 }] })));
-    expect((await openRoom()).peer.options).toEqual({});
+    expect((await openRoom()).peer.options).toEqual(STUN_ONLY);
     vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
-    expect((await openRoom()).peer.options).toEqual({});
+    expect((await openRoom()).peer.options).toEqual(STUN_ONLY);
   });
 
   it('treats a body that is not an object (array, null, string) as no TURN', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(Response.json([{ urls: 'stun:x' }])));
-    expect((await openRoom()).peer.options).toEqual({});
+    expect((await openRoom()).peer.options).toEqual(STUN_ONLY);
     vi.stubGlobal('fetch', () => Promise.resolve(Response.json(null)));
-    expect((await openRoom()).peer.options).toEqual({});
+    expect((await openRoom()).peer.options).toEqual(STUN_ONLY);
     vi.stubGlobal('fetch', () => Promise.resolve(Response.json('stun:x')));
-    expect((await openRoom()).peer.options).toEqual({});
+    expect((await openRoom()).peer.options).toEqual(STUN_ONLY);
   });
 });
 
@@ -287,6 +297,8 @@ describe('active room singleton', () => {
       onGuestMessage: () => () => undefined,
       connectedIds: () => [],
       lock: () => undefined,
+      status: () => 'online',
+      onStatusChange: () => undefined,
       close: () => {
         closed += 1;
       },
@@ -318,5 +330,108 @@ describe('active room singleton', () => {
     setActiveRoom(null);
     expect(a.closed()).toBe(1);
     expect(getActiveRoom()).toBeNull();
+  });
+
+  it("reports the hosted room's status, ignores a replaced room, and null once none is hosted", async () => {
+    const seen: (RoomStatus | null)[] = [];
+    onActiveRoomStatus((s) => seen.push(s));
+    const first = await openRoom();
+    const second = await openRoom();
+    setActiveRoom(first.room);
+    first.peer.dropBroker();
+    setActiveRoom(second.room);
+    first.peer.emit('open'); // the replaced room is closed; its news no longer matters
+    second.peer.dropBroker();
+    setActiveRoom(null);
+    onActiveRoomStatus(null);
+    expect(seen).toEqual([null, 'online', 'offline', 'online', 'offline', null]);
+  });
+});
+
+describe('staying on the broker', () => {
+  it('takes the room back on the same peer after the broker drops it; phones stay connected', async () => {
+    const { room, peer } = await openRoom();
+    const ida = seatGuest(peer, 'Ida');
+    const seen: RoomStatus[] = [];
+    room.onStatusChange((s) => seen.push(s));
+
+    peer.dropBroker();
+    expect(room.status()).toBe('offline');
+    vi.advanceTimersByTime(999);
+    expect(peer.reconnects).toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(peer.reconnects).toBe(1);
+    peer.emit('open');
+
+    expect(room.status()).toBe('online');
+    expect(seen).toEqual(['offline', 'online']);
+    expect(FakePeer.instances).toHaveLength(1);
+    expect(ida.conn.closed).toBe(false);
+    room.broadcast({ type: 'received' });
+    expect(sentTypes(ida.conn)).toContain('received');
+  });
+
+  it('waits longer between failed attempts, and tries at once when the network returns', async () => {
+    const win = new EventTarget();
+    vi.stubGlobal('window', win);
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    const { peer } = await openRoom();
+
+    peer.dropBroker();
+    vi.advanceTimersByTime(1000);
+    expect(peer.reconnects).toBe(1);
+    peer.dropBroker(); // that attempt failed too
+    vi.advanceTimersByTime(1999);
+    expect(peer.reconnects).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect(peer.reconnects).toBe(2);
+    peer.dropBroker();
+    win.dispatchEvent(new Event('online'));
+    expect(peer.reconnects).toBe(3);
+  });
+
+  it('tries at once when the page becomes visible again (a phone screen waking up)', async () => {
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'hidden' });
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', doc);
+    const { peer } = await openRoom();
+    peer.dropBroker();
+    vi.advanceTimersByTime(1000);
+    peer.dropBroker();
+    doc.visibilityState = 'visible';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(peer.reconnects).toBe(2);
+  });
+
+  it('cuts a reconnect that hangs after 12 s and tries again', async () => {
+    const { room, peer } = await openRoom();
+    peer.dropBroker();
+    vi.advanceTimersByTime(1000);
+    expect(peer.reconnects).toBe(1);
+    vi.advanceTimersByTime(12_000);
+    expect(room.status()).toBe('offline');
+    vi.advanceTimersByTime(2000);
+    expect(peer.reconnects).toBe(2);
+  });
+
+  it('a closed room stops trying', async () => {
+    const { room, peer } = await openRoom();
+    peer.dropBroker();
+    room.close();
+    vi.advanceTimersByTime(60_000);
+    expect(peer.reconnects).toBe(0);
+  });
+
+  it('sends each connected phone a heartbeat every 4 s', async () => {
+    const { room, peer } = await openRoom();
+    const ida = seatGuest(peer, 'Ida');
+    const bo = seatGuest(peer, 'Bo');
+    bo.conn.emit('close'); // left the lobby
+    vi.advanceTimersByTime(8000);
+    expect(sentTypes(ida.conn).filter((t) => t === 'ping')).toHaveLength(2);
+    expect(sentTypes(bo.conn)).not.toContain('ping');
+    room.close();
+    vi.advanceTimersByTime(8000);
+    expect(sentTypes(ida.conn).filter((t) => t === 'ping')).toHaveLength(2);
   });
 });

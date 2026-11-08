@@ -24,6 +24,8 @@ A locked code scheme exists. Before writing any code in `src/`, follow the `code
 
 `node tools/capture.mjs --screen <name|all> [--widths 390,820,1440] [--theme light|dark|both] [--frames N --interval MS]` — drives headless Chrome/Edge (no npm dependency) through the scripted flows in `tools/screens.json` and writes `qa/captures/<screen>-<shot>-<width>-<theme>.png`, then prints any console errors. `--list` names the screens. Attaches to the dev server on :5180 or starts it. Multi-device flows (a phones-join room) use one tab per device; `127.0.0.1` keeps a phone's storage apart from the host's. `/turn-credentials` 404s are expected in dev (the Pages Function only runs on Cloudflare).
 
+`node tools/room-faults.mjs [--only a,b] [--slow] [--base URL] [--list]` — phones-join fault scenarios in real headless Chrome (broker drops, a host going silent, the room id still held, Back on the host, a silent phone, late/wrong codes, two tabs of one browser, photo avatars). Prints PASS/FAIL per scenario, exits 1 on any failure, screenshots in `qa/room-faults/`. Default is the dev server on :5180; `--base https://kategoria.pages.dev/` also runs the TURN relay-only check, and a `vite preview` URL runs the stale-build reload check. To simulate a sleeping device, swallow the PeerJS HEARTBEAT (as `host-silent` does): `Page.setWebLifecycleState` frozen does not stop JS in headless Chrome.
+
 ## How to deploy
 
 `npm run deploy` — builds and uploads `dist/` to Cloudflare Pages (project `kategoria`, https://kategoria.pages.dev).

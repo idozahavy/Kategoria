@@ -207,6 +207,14 @@ export const en: LanguagePack = {
     'join.error.network': "Couldn't connect — check your internet and try again.",
     'join.error.hostLeft': 'The game has ended.',
     'join.error.disconnected': 'Lost the connection! Tap "Try again" to jump back in.',
+    'join.error.started':
+      'That game has already started. Only its players can come back in, with the same name.',
+    'join.error.codeLetters': 'Room codes use only the letters A to Z, like ABCD.',
+    'join.error.codeLength': 'Room codes have 4 letters — check the big screen!',
+    'room.offline': "Room offline — reconnecting… Phones can't join right now.",
+    'room.leaveConfirm':
+      'Leave the game? Every phone will be disconnected. You can resume it later.',
+    'room.leave': 'Leave',
 
     'setup.voting': 'Word votes',
     'setup.voting.devices': 'Vote on phones',

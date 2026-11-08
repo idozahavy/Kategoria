@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { isGuestMessage, isIceServerArray, makeRoomCode, normalizeRoomCode } from './p2p';
+import {
+  isGuestMessage,
+  isIceServerArray,
+  makeRoomCode,
+  normalizeRoomCode,
+  roomCodeProblem,
+} from './p2p';
 
 describe('room codes', () => {
   it('makes 4-letter codes from the kid-safe alphabet', () => {
@@ -12,6 +18,24 @@ describe('room codes', () => {
   it('normalizes typed codes: trim, uppercase, strip inner spaces', () => {
     expect(normalizeRoomCode(' ab cd ')).toBe('ABCD');
     expect(normalizeRoomCode('wxyz')).toBe('WXYZ');
+  });
+});
+
+describe('roomCodeProblem', () => {
+  it('passes a typed code once normalized', () => {
+    expect(roomCodeProblem(' ab cd ')).toBeNull();
+  });
+
+  it('names what is wrong instead of asking the broker for a room that cannot exist', () => {
+    expect(roomCodeProblem('   ')).toBe('empty');
+    // A Hebrew, Arabic or Russian keyboard; digits; punctuation.
+    expect(roomCodeProblem('אבגד')).toBe('letters');
+    expect(roomCodeProblem('ابجد')).toBe('letters');
+    expect(roomCodeProblem('АБВГ')).toBe('letters');
+    expect(roomCodeProblem('AB1D')).toBe('letters');
+    expect(roomCodeProblem('AB-CD')).toBe('letters');
+    expect(roomCodeProblem('ABC')).toBe('length');
+    expect(roomCodeProblem('ABCDE')).toBe('length');
   });
 });
 

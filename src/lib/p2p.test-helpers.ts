@@ -43,6 +43,9 @@ export class FakePeer extends Emitter {
   readonly id: string | null;
   readonly options: unknown;
   destroyed = false;
+  /** Off the broker (PeerJS sets this before it emits 'disconnected'). */
+  disconnected = false;
+  reconnects = 0;
   readonly connections: { id: string; options: unknown; conn: FakeConn }[] = [];
 
   constructor(idOrOptions?: unknown, options?: unknown) {
@@ -59,6 +62,22 @@ export class FakePeer extends Emitter {
 
   destroy(): void {
     this.destroyed = true;
+  }
+
+  /** The broker dropped this peer: its socket closed, its data connections didn't. */
+  dropBroker(): void {
+    this.disconnected = true;
+    this.emit('disconnected');
+  }
+
+  reconnect(): void {
+    this.reconnects += 1;
+    this.disconnected = false;
+  }
+
+  disconnect(): void {
+    if (this.disconnected) return;
+    this.dropBroker();
   }
 
   connect(id: string, options: unknown): FakeConn {

@@ -3,6 +3,7 @@ import type { DataConnection, PeerJSOption } from 'peerjs';
 
 import { trackEvent } from './analytics';
 import { newId } from './game';
+import { tabId } from './guestsession';
 import { readStorage, writeStorage } from './storage';
 import { getTurnstileToken } from './turnstile';
 import type { AnswerStatus } from './types';
@@ -101,7 +102,17 @@ export type HostMessage =
       hasSpeedScoring?: boolean;
     }
   | { type: 'scores'; rows: StandingRow[]; winner: string }
-  | { type: 'ended' };
+  | { type: 'ended' }
+  /** Heartbeat — lets a phone notice a host that went away without closing the connection. */
+  | { type: 'ping' }
+  /** The round is ending (time's up, or the host finished it): send the words typed so far. */
+  | { type: 'stop'; roundIndex: number };
+
+/**
+ * 'offline' while the broker doesn't have the room: phones already in keep
+ * playing, but nobody can join or come back until it is 'online' again.
+ */
+export type RoomStatus = 'online' | 'offline';
 
 export interface GuestInfo {
   playerId: string;
@@ -111,7 +122,8 @@ export interface GuestInfo {
   deviceId?: string;
 }
 
-type JoinFailure = 'not-found' | 'network';
+/** 'started': the room exists but is locked, and this phone has no seat in it. */
+type JoinFailure = 'not-found' | 'started' | 'network';
 
 /** Peer-id namespace; the 4-letter code is the only part players type. */
 const PEER_PREFIX = 'kidcategories-v1-';
@@ -128,8 +140,25 @@ const MAX_VOTE_ID_LENGTH = 64;
 const JOIN_TIMEOUT_MS = 12000;
 /** Wait for the last outgoing message to flush before tearing the connection down. */
 const CLOSE_FLUSH_MS = 500;
-/** Pause between retries when the broker still holds our peer id from a previous session. */
-const REOPEN_RETRY_MS = 2000;
+/**
+ * Pauses between attempts to put a room back on the broker after it dropped
+ * the host (screen asleep, app switch, network change); the last one repeats
+ * until it works. The broker frees a silent host's id only after about 100 s.
+ */
+const REGISTER_RETRY_MS = [1000, 2000, 4000, 5000];
+/** The last room this browser hosted and its broker token, as `CODE:token`. */
+const HOST_ROOM_KEY = 'categories-host-room';
+/**
+ * Peer errors about the broker connection alone. A joined phone talks to the
+ * host directly, so these don't end its game.
+ */
+const BROKER_ERROR_TYPES: ReadonlySet<string> = new Set([
+  'network',
+  'server-error',
+  'socket-error',
+  'socket-closed',
+  'disconnected',
+]);
 /** Guests send a ping this often while in a room. */
 export const PING_INTERVAL_MS = 4000;
 /** A seat silent for longer than this (three missed pings) no longer counts as connected. */
@@ -149,6 +178,37 @@ function getDeviceId(): string {
   return sessionDeviceId;
 }
 
+/**
+ * Whether this tab holds the browser's device id. Tabs of one browser share
+ * localStorage, so two of them in one room would each reclaim the other's
+ * seat forever. The first tab to join holds a Web Lock on the id for the rest
+ * of its life; any other tab joins under its own variant. Asked once per page.
+ */
+let deviceIdLock: Promise<boolean> | null = null;
+
+function claimDeviceIdLock(): Promise<boolean> {
+  if (!('locks' in navigator)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    void navigator.locks
+      .request(DEVICE_ID_KEY, { ifAvailable: true }, (lock) => {
+        resolve(lock !== null);
+        // Held until the page goes away (the browser frees it on unload).
+        return lock === null ? undefined : new Promise<never>(() => undefined);
+      })
+      .catch(() => {
+        resolve(true);
+      });
+  });
+}
+
+/** The device id this tab joins with: the browser's own, or this tab's variant of it. */
+async function deviceIdForThisTab(): Promise<string> {
+  deviceIdLock ??= claimDeviceIdLock();
+  const isFirstTab = await deviceIdLock;
+  const base = getDeviceId();
+  return isFirstTab ? base : `${base}~${tabId()}`;
+}
+
 export function makeRoomCode(): string {
   let code = '';
   for (let i = 0; i < CODE_LENGTH; i++) {
@@ -159,6 +219,20 @@ export function makeRoomCode(): string {
 
 export function normalizeRoomCode(raw: string): string {
   return raw.trim().toLocaleUpperCase().replace(/\s+/g, '');
+}
+
+export type RoomCodeProblem = 'empty' | 'letters' | 'length';
+
+/**
+ * Why a typed code can't be a room code, found before asking the broker —
+ * a phone whose keyboard is set to Hebrew, Arabic or Russian types letters no
+ * code has, and the broker would only say "no such room".
+ */
+export function roomCodeProblem(raw: string): RoomCodeProblem | null {
+  const code = normalizeRoomCode(raw);
+  if (code === '') return 'empty';
+  if (!/^[A-Z]+$/.test(code)) return 'letters';
+  return code.length === CODE_LENGTH ? null : 'length';
 }
 
 function sanitizeName(raw: unknown): string {
@@ -323,6 +397,10 @@ export function isHostMessage(v: unknown): v is HostMessage {
       );
     case 'ended':
       return true;
+    case 'ping':
+      return true;
+    case 'stop':
+      return typeof m['roundIndex'] === 'number';
     default:
       return false;
   }
@@ -430,94 +508,111 @@ export interface HostRoom {
   connectedIds(): string[];
   /** Stop accepting new joins (called when the game starts). */
   lock(): void;
+  /** Whether new and returning phones can reach the room right now. */
+  status(): RoomStatus;
+  onStatusChange(cb: ((status: RoomStatus) => void) | null): void;
   close(): void;
+}
+
+function roomPeerId(code: string): string {
+  return PEER_PREFIX + code;
+}
+
+/**
+ * The broker hands a room's id to a socket that shows the room's token, even
+ * while the old socket still lingers — so a reloaded host page takes its room
+ * straight back instead of waiting ~100 s for the broker to drop the old page.
+ * Remembered for the last room this browser hosted.
+ */
+function roomToken(code: string, isNewRoom: boolean): string {
+  const prefix = `${code}:`;
+  const saved = readStorage(HOST_ROOM_KEY);
+  if (!isNewRoom && saved?.startsWith(prefix) === true) return saved.slice(prefix.length);
+  const token = newId();
+  writeStorage(HOST_ROOM_KEY, prefix + token);
+  return token;
+}
+
+/** Register a peer under `id`; rejects with the broker's error type (or 'timeout'). */
+function openPeer(PeerCtor: typeof Peer, id: string, options: PeerJSOption): Promise<Peer> {
+  return new Promise((resolve, reject) => {
+    const peer = new PeerCtor(id, options);
+    let settled = false;
+    const fail = (reason: string): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      peer.destroy();
+      reject(new Error(reason));
+    };
+    const timeout = setTimeout(() => {
+      fail('timeout');
+    }, JOIN_TIMEOUT_MS);
+    peer.on('open', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(peer);
+    });
+    peer.on('error', (err) => {
+      fail(err.type);
+    });
+  });
 }
 
 /** Open a room on the public broker; retries with a fresh code on collision. */
 export async function createRoom(attempts = 3): Promise<HostRoom> {
   const [options, PeerCtor] = await Promise.all([getPeerOptions(), loadPeer()]);
-  return new Promise((resolve, reject) => {
+  for (let left = attempts; ; left--) {
     const code = makeRoomCode();
-    const peer = new PeerCtor(PEER_PREFIX + code, options);
-    let settled = false;
-
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      peer.destroy();
-      reject(new Error('network'));
-    }, JOIN_TIMEOUT_MS);
-
-    peer.on('open', () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
+    const token = roomToken(code, true);
+    try {
+      const peer = await openPeer(PeerCtor, roomPeerId(code), { ...options, token });
       trackEvent('room_create');
-      resolve(buildHostRoom(code, peer));
-    });
-
-    peer.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      peer.destroy();
-      if (err.type === 'unavailable-id' && attempts > 1) {
-        resolve(createRoom(attempts - 1));
-      } else {
-        reject(new Error('network'));
+      return buildHostRoom({ code, token, options, PeerCtor, peer });
+    } catch (e) {
+      if (!(e instanceof Error && e.message === 'unavailable-id') || left <= 1) {
+        throw new Error('network');
       }
-    });
-  });
+    }
+  }
 }
 
 /**
  * Re-register a room under its original code after the host page reloaded.
  * The room starts locked with an empty (disconnected) seat per known player,
  * so guests rejoin their seats by name exactly like a dropped-connection
- * reconnect. Retries briefly — the broker may still hold the pre-reload peer.
+ * reconnect. Resolves at once with the room 'offline'; it turns 'online' when
+ * the broker gives the id back — right away with this browser's saved token,
+ * otherwise once the broker drops the old page (it keeps trying until then).
  */
-export async function reopenRoom(
-  code: string,
-  players: GuestInfo[],
-  attempts = 3,
-): Promise<HostRoom> {
+export async function reopenRoom(code: string, players: GuestInfo[]): Promise<HostRoom> {
   const [options, PeerCtor] = await Promise.all([getPeerOptions(), loadPeer()]);
-  return new Promise((resolve, reject) => {
-    const normalized = normalizeRoomCode(code);
-    const peer = new PeerCtor(PEER_PREFIX + normalized, options);
-    let settled = false;
-
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      peer.destroy();
-      reject(new Error('network'));
-    }, JOIN_TIMEOUT_MS);
-
-    peer.on('open', () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve(buildHostRoom(normalized, peer, players));
-    });
-
-    peer.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      peer.destroy();
-      if (err.type === 'unavailable-id' && attempts > 1) {
-        setTimeout(() => {
-          resolve(reopenRoom(code, players, attempts - 1));
-        }, REOPEN_RETRY_MS);
-      } else {
-        reject(new Error('network'));
-      }
-    });
+  const normalized = normalizeRoomCode(code);
+  return buildHostRoom({
+    code: normalized,
+    token: roomToken(normalized, false),
+    options,
+    PeerCtor,
+    peer: null,
+    seed: players,
   });
 }
 
-function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
+interface RoomLink {
+  code: string;
+  /** The broker token that lets this room take its id back. */
+  token: string;
+  options: PeerJSOption;
+  PeerCtor: typeof Peer;
+  /** Already registered (a new room), or null to register first (a reopened one). */
+  peer: Peer | null;
+  /** Reopened room: the players who already have a seat. */
+  seed?: GuestInfo[];
+}
+
+function buildHostRoom(link: RoomLink): HostRoom {
+  const { code, seed } = link;
   interface Seat {
     /** null while the guest is disconnected (kept for reconnects after lock). */
     conn: DataConnection | null;
@@ -598,7 +693,7 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
     }
   };
 
-  peer.on('connection', (conn) => {
+  const onConnection = (conn: DataConnection): void => {
     let seatId: string | null = null;
 
     /** Hand an existing seat to this (re)connection, superseding a stale one. */
@@ -697,7 +792,117 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
     };
     conn.on('close', dropped);
     conn.on('error', dropped);
-  });
+  };
+
+  // --- Staying on the broker ---------------------------------------------
+  // The broker only matters to phones that aren't connected yet (new ones, or
+  // ones coming back): when it drops the host, the room plays on but can't be
+  // found. A host whose screen slept or who switched apps would otherwise show
+  // a code that leads nowhere ("Couldn't find that room") for the rest of the
+  // game. So the room keeps registering itself until it is back.
+  let peer: Peer | null = null;
+  let status: RoomStatus = 'offline';
+  let statusCb: ((status: RoomStatus) => void) | null = null;
+  let isClosed = false;
+  let isRegistering = false;
+  let retries = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let registerTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const setStatus = (next: RoomStatus): void => {
+    if (status === next) return;
+    status = next;
+    statusCb?.(next);
+  };
+
+  const clearRegisterTimer = (): void => {
+    if (registerTimer !== null) clearTimeout(registerTimer);
+    registerTimer = null;
+  };
+
+  const retryLater = (): void => {
+    if (isClosed || retryTimer !== null) return;
+    const delay = REGISTER_RETRY_MS[Math.min(retries, REGISTER_RETRY_MS.length - 1)] ?? 0;
+    retries += 1;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      register();
+    }, delay);
+  };
+
+  const adopt = (p: Peer): void => {
+    peer = p;
+    p.on('connection', onConnection);
+    p.on('open', () => {
+      // Back on the broker after a drop.
+      isRegistering = false;
+      clearRegisterTimer();
+      retries = 0;
+      setStatus('online');
+    });
+    p.on('disconnected', () => {
+      isRegistering = false;
+      clearRegisterTimer();
+      if (isClosed) return;
+      setStatus('offline');
+      retryLater();
+    });
+    setStatus('online');
+  };
+
+  function register(): void {
+    if (isClosed || status === 'online' || isRegistering) return;
+    isRegistering = true;
+    const current = peer;
+    if (current) {
+      // Same peer, id and token: the broker gives the id straight back and the
+      // phones' connections stay up. Its next 'open' or 'disconnected' says
+      // how it went; a socket that hangs is cut after the timeout.
+      if (current.disconnected && !current.destroyed) current.reconnect();
+      registerTimer = setTimeout(() => {
+        registerTimer = null;
+        if (status !== 'online') current.disconnect();
+      }, JOIN_TIMEOUT_MS);
+      return;
+    }
+    // Reopened after a reload: a fresh peer per attempt, since the broker
+    // destroys one whose id it still holds for the old page.
+    void openPeer(link.PeerCtor, roomPeerId(code), { ...link.options, token: link.token }).then(
+      (p) => {
+        isRegistering = false;
+        if (isClosed) p.destroy();
+        else adopt(p);
+      },
+      () => {
+        isRegistering = false;
+        retryLater();
+      },
+    );
+  }
+
+  /** The page is back in view or the network returned: try now instead of waiting. */
+  const registerNow = (): void => {
+    if (isClosed || status === 'online') return;
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    retryTimer = null;
+    retries = 0;
+    register();
+  };
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') registerNow();
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', registerNow);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+  }
+
+  if (link.peer) adopt(link.peer);
+  else register();
+
+  // Heartbeat to every phone, so a phone can tell a host that went away from a quiet game.
+  const pingTimer = setInterval(() => {
+    for (const s of seats.values()) if (s.conn) void s.conn.send({ type: 'ping' });
+  }, PING_INTERVAL_MS);
 
   return {
     code,
@@ -725,10 +930,23 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
     lock: () => {
       locked = true;
     },
+    status: () => status,
+    onStatusChange: (cb) => {
+      statusCb = cb;
+    },
     close: () => {
+      isClosed = true;
+      clearInterval(pingTimer);
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      clearRegisterTimer();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', registerNow);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
       broadcast({ type: 'ended' });
+      const last = peer;
       setTimeout(() => {
-        peer.destroy();
+        last?.destroy();
       }, CLOSE_FLUSH_MS);
       seats.clear();
     },
@@ -740,10 +958,21 @@ function buildHostRoom(code: string, peer: Peer, seed?: GuestInfo[]): HostRoom {
  * runtime-only — never part of GameState (connections can't be serialized).
  */
 let activeRoom: HostRoom | null = null;
+let activeStatusCb: ((status: RoomStatus | null) => void) | null = null;
 
 export function setActiveRoom(room: HostRoom | null): void {
   if (activeRoom && activeRoom !== room) activeRoom.close();
   activeRoom = room;
+  room?.onStatusChange((status) => {
+    if (activeRoom === room) activeStatusCb?.(status);
+  });
+  activeStatusCb?.(room?.status() ?? null);
+}
+
+/** Follow the hosted room's broker status; null while no room is hosted. */
+export function onActiveRoomStatus(cb: ((status: RoomStatus | null) => void) | null): void {
+  activeStatusCb = cb;
+  cb?.(activeRoom?.status() ?? null);
 }
 
 export function getActiveRoom(): HostRoom | null {
@@ -762,25 +991,38 @@ export interface GuestSession {
   close(): void;
 }
 
-/** Join a room by code; rejects with Error('not-found' | 'network'). */
+/** Join a room by code; rejects with Error('not-found' | 'started' | 'network'). */
 export async function joinRoom(code: string, name: string, avatar?: string): Promise<GuestSession> {
-  const [options, PeerCtor] = await Promise.all([getPeerOptions(), loadPeer()]);
+  const [options, PeerCtor, deviceId] = await Promise.all([
+    getPeerOptions(),
+    loadPeer(),
+    deviceIdForThisTab(),
+  ]);
   return new Promise((resolve, reject) => {
     const peer = new PeerCtor(options);
     let settled = false;
     let messageCb: ((msg: HostMessage) => void) | null = null;
     let closeCb: (() => void) | null = null;
-    // Once joined, any failure — the data connection closing, or the peer
-    // losing the broker/network — tells the room exactly once, even when one
-    // outage fires several related events (error, disconnected, close). The
+    // Once joined, only the link to the host matters. The broker is just the
+    // meeting point: when it drops this phone (a network blip, the screen
+    // locking) the connection to the host plays on, and tearing it down would
+    // kick the player out of a working game. The link counts as lost when the
+    // connection closes or errors, the peer dies, or the host's heartbeat
+    // stops (a dead network rarely closes the channel promptly). That tells
+    // the room exactly once, even when one outage fires several events. The
     // stale peer is torn down first, so it can't linger beside the new one the
     // Join screen's reconnect loop opens (the host lets the new connection
-    // reclaim the seat by deviceId). A broker-only drop also lands here: the
-    // reconnect is cheap, and a dead network rarely closes the channel promptly.
+    // reclaim the seat by deviceId).
     let peerDown = false;
+    let hostWatch: ReturnType<typeof setInterval> | null = null;
+    const stopHostWatch = (): void => {
+      if (hostWatch !== null) clearInterval(hostWatch);
+      hostWatch = null;
+    };
     const firePeerDown = (): void => {
       if (peerDown) return;
       peerDown = true;
+      stopHostWatch();
       peer.destroy();
       closeCb?.();
     };
@@ -803,34 +1045,39 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
         else fail('network');
         return;
       }
-      firePeerDown();
-    });
-    peer.on('disconnected', () => {
-      if (settled) firePeerDown();
+      if (!BROKER_ERROR_TYPES.has(err.type)) firePeerDown();
     });
     peer.on('close', () => {
       if (settled) firePeerDown();
     });
 
     peer.on('open', () => {
-      const conn = peer.connect(PEER_PREFIX + normalizeRoomCode(code), { reliable: true });
+      const conn = peer.connect(roomPeerId(normalizeRoomCode(code)), { reliable: true });
       conn.on('open', () => {
         // Undefined values don't survive the wire (they arrive as null) —
         // include optional keys only when they carry a value.
-        const hello: Extract<GuestMessage, { type: 'hello' }> = {
-          type: 'hello',
-          name,
-          deviceId: getDeviceId(),
-        };
+        const hello: Extract<GuestMessage, { type: 'hello' }> = { type: 'hello', name, deviceId };
         if (avatar !== undefined) hello.avatar = avatar;
         void conn.send(hello);
       });
+      // When the host was last heard from. Its heartbeat arms the watch: a
+      // host page from before the heartbeat existed never sends one.
+      let lastHeardAt = Date.now();
+      let hasHostBeat = false;
       conn.on('data', (data) => {
         if (!isHostMessage(data)) return;
+        lastHeardAt = Date.now();
+        if (data.type === 'ping') {
+          hasHostBeat = true;
+          return;
+        }
         if (!settled && data.type === 'welcome') {
           settled = true;
           clearTimeout(timeout);
           trackEvent('room_join');
+          hostWatch = setInterval(() => {
+            if (hasHostBeat && Date.now() - lastHeardAt > STALE_AFTER_MS) firePeerDown();
+          }, PING_INTERVAL_MS);
           resolve({
             playerId: data.playerId,
             send: (msg) => {
@@ -844,6 +1091,7 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
             },
             close: () => {
               peerDown = true; // an intentional close is not a failure
+              stopHostWatch();
               conn.close();
               peer.destroy();
             },
@@ -851,7 +1099,7 @@ export async function joinRoom(code: string, name: string, avatar?: string): Pro
           return;
         }
         if (!settled && data.type === 'busy') {
-          fail('not-found');
+          fail('started');
           return;
         }
         messageCb?.(data);

@@ -234,5 +234,155 @@
       }
     ],
     "capture": [{ "tab": "ida", "name": "after-leave", "widths": [390] }]
+  },
+
+  "room-offline": {
+    "description": "Host lobby while the room is off the broker (broker sockets blocked): the 'Room offline' banner over the code and QR",
+    "vars": { "lang": "en" },
+    "tabs": {
+      "host": {
+        "url": "http://localhost:5180/",
+        "width": 1440,
+        "init": "(() => { const N = window.WebSocket; window.__ws = []; window.WebSocket = class extends N { constructor(u, ...a) { const b = String(u).includes('peerjs'); super(b && window.__blockBroker ? 'wss://127.0.0.1:9/blocked' : u, ...a); if (b) window.__ws.push(this); } }; })();"
+      }
+    },
+    "steps": [
+      { "tab": "host", "js": "localStorage.setItem('categories-ui-language', '{{lang}}');" },
+      { "tab": "host", "reload": "http://localhost:5180/" },
+      {
+        "tab": "host",
+        "js": [
+          "await __cap.clickSel('.actions .btn.accent');",
+          "await __cap.clickSel('.mode-card:nth-child(2)');",
+          "await __cap.waitFor(() => document.querySelector('.room-code'), 20000);",
+          "window.__blockBroker = true;",
+          "window.__ws.forEach((w) => w.close());",
+          "await __cap.waitFor(() => document.querySelector('.room-banner'), 10000);"
+        ]
+      }
+    ],
+    "capture": [{ "tab": "host", "name": "banner" }]
+  },
+  "room-offline-he": {
+    "template": "room-offline",
+    "description": "The offline banner in Hebrew (RTL)",
+    "vars": { "lang": "he" },
+    "capture": [{ "tab": "host", "name": "banner", "widths": [390, 1440] }]
+  },
+
+  "host-leave-confirm": {
+    "description": "Host lobby with a room open: browser Back asks before ending the room for every phone",
+    "tabs": {
+      "host": {
+        "url": "http://localhost:5180/",
+        "width": 1440,
+        "storage": { "categories-ui-language": "en" }
+      }
+    },
+    "steps": [
+      {
+        "tab": "host",
+        "js": [
+          "await __cap.click('New Game');",
+          "await __cap.clickSel('.mode-card:nth-child(2)');",
+          "await __cap.waitFor(() => document.querySelector('.room-code'), 20000);",
+          "history.back();",
+          "await __cap.waitFor(() => document.querySelector('.modal .btn.danger'), 5000);"
+        ]
+      }
+    ],
+    "capture": [{ "tab": "host", "name": "modal" }]
+  },
+
+  "away-chip": {
+    "description": "Remote round on the shared screen: Ida done, Cy typing, Bo's phone silent (marked away). Cy is a second tab of Ida's browser",
+    "tabs": {
+      "host": {
+        "url": "http://localhost:5180/",
+        "width": 1440,
+        "storage": { "categories-ui-language": "en" }
+      },
+      "ida": { "url": "http://127.0.0.1:5180/", "storage": { "categories-ui-language": "en" } },
+      "cy": { "url": "http://127.0.0.1:5180/" },
+      "bo": { "url": "http://localhost:5180/" }
+    },
+    "steps": [
+      {
+        "tab": "host",
+        "saveAs": "code",
+        "js": [
+          "await __cap.click('New Game');",
+          "await __cap.clickSel('.mode-card:nth-child(2)');",
+          "return (await __cap.waitFor(() => document.querySelector('.room-code'), 20000)).textContent.trim();"
+        ]
+      },
+      { "tab": "ida", "reload": "http://127.0.0.1:5180/?join={{code}}" },
+      {
+        "tab": "ida",
+        "js": "__cap.type(document.querySelectorAll('.join input')[1], 'Ida'); await __cap.clickSel('.join .btn.accent'); await __cap.waitFor(() => document.querySelector('.roster'), 20000);"
+      },
+      { "tab": "cy", "reload": "http://127.0.0.1:5180/?join={{code}}" },
+      {
+        "tab": "cy",
+        "js": "__cap.type(document.querySelectorAll('.join input')[1], 'Cy'); await __cap.clickSel('.join .btn.accent'); await __cap.waitFor(() => document.querySelector('.roster'), 20000);"
+      },
+      { "tab": "bo", "reload": "http://localhost:5180/?join={{code}}" },
+      {
+        "tab": "bo",
+        "js": "__cap.type(document.querySelectorAll('.join input')[1], 'Bo'); await __cap.clickSel('.join .btn.accent'); await __cap.waitFor(() => document.querySelector('.roster'), 20000);"
+      },
+      {
+        "tab": "host",
+        "js": [
+          "await __cap.waitFor(() => document.querySelectorAll('.roster-chip').length === 3, 20000);",
+          "await __cap.click('Next'); await __cap.click('Classic'); await __cap.click('Next');",
+          "await __cap.click('No timer');",
+          "await __cap.clickSel('.btn.accent');",
+          "await __cap.waitFor(() => document.querySelector('.waiting-box'), 20000);"
+        ]
+      },
+      {
+        "tab": "bo",
+        "js": "await __cap.waitFor(() => document.querySelector('.cards input'), 20000); RTCDataChannel.prototype.send = function () {};"
+      },
+      {
+        "tab": "ida",
+        "js": "await __cap.waitFor(() => document.querySelector('.cards input'), 20000); await __cap.click('Done');"
+      },
+      {
+        "tab": "host",
+        "js": "await __cap.waitFor(() => document.querySelector('.wait-chip.away') && document.querySelector('.wait-chip.done'), 25000);"
+      }
+    ],
+    "capture": [{ "tab": "host", "name": "chips", "settle": 300 }]
+  },
+
+  "join-code-error": {
+    "description": "Join form after typing the room code on a Hebrew keyboard: the A-Z hint under the code field (UI language {{lang}})",
+    "vars": { "lang": "en", "name": "Dana" },
+    "tabs": {
+      "phone": { "url": "http://localhost:5180/" }
+    },
+    "steps": [
+      { "tab": "phone", "js": "localStorage.setItem('categories-ui-language', '{{lang}}');" },
+      { "tab": "phone", "reload": "http://localhost:5180/" },
+      {
+        "tab": "phone",
+        "js": [
+          "await __cap.clickSel('.actions .btn.primary');",
+          "const inputs = await __cap.waitFor(() => document.querySelectorAll('.join input').length > 1 && document.querySelectorAll('.join input'));",
+          "__cap.type(inputs[0], 'אבגד'); __cap.type(inputs[1], '{{name}}');",
+          "await __cap.clickSel('.join .btn.accent');",
+          "await __cap.waitFor(() => document.querySelector('.errmsg'), 5000);"
+        ]
+      }
+    ],
+    "capture": [{ "tab": "phone", "name": "letters" }]
+  },
+  "join-code-error-he": {
+    "template": "join-code-error",
+    "description": "The code hint in Hebrew (RTL)",
+    "vars": { "lang": "he", "name": "דנה" },
+    "capture": [{ "tab": "phone", "name": "letters", "widths": [390, 1440] }]
   }
 }

@@ -72,11 +72,44 @@ describe('joinRoom handshake', () => {
     await expect(pending).resolves.toMatchObject({ playerId: 'guest-3-42' });
   });
 
-  it('a "busy" answer before welcome means the room is not open to us', async () => {
+  it('a "busy" answer before welcome means the game started without us (not a wrong code)', async () => {
     const { pending, peer, conn } = await connect();
     conn.emit('data', { type: 'busy' });
-    await expect(pending).rejects.toThrow('not-found');
+    await expect(pending).rejects.toThrow('started');
     expect(peer.destroyed).toBe(true);
+  });
+
+  it('a second tab of the same browser joins under its own variant of the device id', async () => {
+    vi.resetModules();
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => JSON.stringify('tab42'),
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    // The first tab already holds the lock on the device id.
+    vi.stubGlobal('navigator', {
+      languages: ['en'],
+      locks: {
+        request: (_name: string, _opts: unknown, cb: (lock: null) => unknown) =>
+          Promise.resolve(cb(null)),
+      },
+    });
+    const fresh = await import('./p2p');
+    const pending = fresh.joinRoom('abcd', 'Ben');
+    pending.catch(() => undefined);
+    await flush();
+    const peer = FakePeer.last();
+    peer.emit('open');
+    const link = peer.connections[0];
+    link?.conn.emit('open');
+    expect(link?.conn.sent[0]).toMatchObject({ type: 'hello', deviceId: 'dev-1~tab42' });
+  });
+
+  it('accepts the round-ending "stop" only with a round index, and the bare heartbeat', () => {
+    expect(isHostMessage({ type: 'stop', roundIndex: 2 })).toBe(true);
+    expect(isHostMessage({ type: 'stop' })).toBe(false);
+    expect(isHostMessage({ type: 'stop', roundIndex: '2' })).toBe(false);
+    expect(isHostMessage({ type: 'ping' })).toBe(true);
   });
 
   it('an unknown room id fails as not-found, other broker errors as network', async () => {
@@ -279,21 +312,63 @@ describe('joined session', () => {
     const { session, peer } = await joined();
     const onClose = vi.fn();
     session.onClose(onClose);
-    // A dropped broker connection can raise error, then disconnected, then
-    // close for the same underlying failure — the guest room must treat that
-    // as a single "the host is gone" event, not three.
-    peer.emit('error', { type: 'network' });
+    // One failure can raise error, then disconnected, then close — the guest
+    // room must treat that as a single "the host is gone" event, not three.
+    peer.emit('error', { type: 'webrtc' });
     peer.emit('disconnected');
     peer.emit('close');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('BUG-002: a peer "disconnected" alone (no error) still closes the guest room', async () => {
-    const { session, peer } = await joined();
+  it('keeps playing when only the broker drops the phone: the host link is direct', async () => {
+    const { session, peer, conn } = await joined();
+    const onClose = vi.fn();
+    const onMessage = vi.fn();
+    session.onClose(onClose);
+    session.onMessage(onMessage);
+    for (const type of ['network', 'server-error', 'socket-error', 'socket-closed']) {
+      peer.emit('error', { type });
+    }
+    peer.dropBroker();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(peer.destroyed).toBe(false);
+    conn.emit('data', { type: 'received' });
+    expect(onMessage).toHaveBeenCalledWith({ type: 'received' });
+  });
+
+  it('a host that stops its heartbeat counts as gone after 12 s of silence', async () => {
+    const { session, peer, conn } = await joined();
+    const onClose = vi.fn();
+    const onMessage = vi.fn();
+    session.onClose(onClose);
+    session.onMessage(onMessage);
+    conn.emit('data', { type: 'ping' });
+    expect(onMessage).not.toHaveBeenCalled(); // liveness only, not for the screens
+    vi.advanceTimersByTime(11_000);
+    conn.emit('data', { type: 'ping' });
+    vi.advanceTimersByTime(12_000);
+    expect(onClose).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(4_000);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(peer.destroyed).toBe(true);
+  });
+
+  it('never times out a host that sends no heartbeat at all (a page from before it existed)', async () => {
+    const { session } = await joined();
     const onClose = vi.fn();
     session.onClose(onClose);
-    peer.emit('disconnected');
-    expect(onClose).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(120_000);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('stops watching the heartbeat once the session is closed on purpose', async () => {
+    const { session, conn } = await joined();
+    const onClose = vi.fn();
+    session.onClose(onClose);
+    conn.emit('data', { type: 'ping' });
+    session.close();
+    vi.advanceTimersByTime(60_000);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('BUG-002: intentionally closing the session does not also fire onClose from the peer', async () => {

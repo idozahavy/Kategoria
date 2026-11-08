@@ -5,11 +5,20 @@
   import { loadGame } from './lib/db';
   import { screenForGame } from './lib/game';
   import { readGuestSeat } from './lib/guestsession';
-  import { pack, persistLanguage, uiLanguage } from './lib/i18n';
-  import { reopenRoom, setActiveRoom } from './lib/p2p';
+  import { pack, persistLanguage, t, uiLanguage } from './lib/i18n';
+  import {
+    getActiveRoom,
+    onActiveRoomStatus,
+    reopenRoom,
+    type RoomStatus,
+    setActiveRoom,
+  } from './lib/p2p';
   import { persistActiveGame, readActiveGameId } from './lib/session';
   import { game, screen } from './lib/stores';
   import { persistTheme, theme } from './lib/theme';
+  import Button from './lib/ui/Button.svelte';
+  import Modal from './lib/ui/Modal.svelte';
+  import { keepScreenOn } from './lib/wakelock';
   import Home from './screens/Home.svelte';
   import HowTo from './screens/HowTo.svelte';
   import Join from './screens/Join.svelte';
@@ -51,6 +60,16 @@
     $game?.settings.isRemote === true &&
       ($screen === 'round' || $screen === 'review' || $screen === 'scoreboard'),
   );
+
+  /** Hosting a room: whether phones can reach it right now (null while no room is hosted). */
+  let roomStatus = $state<RoomStatus | null>(null);
+  /** Back while hosting asks first: Home would end the room for every phone. */
+  let isLeaveConfirmOpen = $state(false);
+
+  function leaveHostedGame(): void {
+    isLeaveConfirmOpen = false;
+    screen.set('home'); // Home closes the room; the game itself stays resumable
+  }
 
   // Captured before the persist effect below first runs (it clears the record
   // while the screen is still 'home').
@@ -115,16 +134,30 @@
     history.pushState({ inApp: true }, '');
     const onPop = (): void => {
       history.pushState({ inApp: true }, '');
+      // Android's back gesture is one swipe away from ending everyone's game.
+      if (getActiveRoom() !== null) {
+        isLeaveConfirmOpen = true;
+        return;
+      }
       screen.set('home');
     };
     window.addEventListener('popstate', onPop);
+    onActiveRoomStatus((status) => {
+      roomStatus = status;
+      // A host screen that sleeps drops the room off the broker.
+      keepScreenOn('host', status !== null);
+    });
     return () => {
       window.removeEventListener('popstate', onPop);
+      onActiveRoomStatus(null);
     };
   });
 </script>
 
 <main class="shell" class:tv={tvMode}>
+  {#if roomStatus === 'offline'}
+    <p class="room-banner" role="status">📶 {$t('room.offline')}</p>
+  {/if}
   {#if $screen === 'home'}
     <Home />
   {:else if $screen === 'new-game'}
@@ -148,7 +181,36 @@
   {/if}
 </main>
 
+<Modal open={isLeaveConfirmOpen} onclose={() => (isLeaveConfirmOpen = false)}>
+  <p class="modal-text">{$t('room.leaveConfirm')}</p>
+  <div class="modal-actions">
+    <Button variant="secondary" block onclick={() => (isLeaveConfirmOpen = false)}
+      >{$t('common.cancel')}</Button
+    >
+    <Button variant="danger" block onclick={leaveHostedGame}>{$t('room.leave')}</Button>
+  </div>
+</Modal>
+
 <style>
+  .room-banner {
+    background: var(--color-warning);
+    color: var(--color-on-warning);
+    border-radius: var(--radius-md);
+    padding-block: var(--space-2);
+    padding-inline: var(--space-3);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-subheading);
+    text-align: center;
+    text-wrap: balance;
+  }
+  .modal-text {
+    font-weight: var(--font-weight-subheading);
+    margin-block-end: var(--space-4);
+  }
+  .modal-actions {
+    display: flex;
+    gap: var(--space-3);
+  }
   .shell {
     --tv-scale: 1;
     inline-size: 100%;

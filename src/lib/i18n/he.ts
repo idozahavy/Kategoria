@@ -229,6 +229,13 @@ export const he: LanguagePack = {
     'join.error.network': 'לא הצלחנו להתחבר — בדקו את האינטרנט ונסו שוב.',
     'join.error.hostLeft': 'המשחק הסתיים.',
     'join.error.disconnected': 'החיבור נותק! לחצו על "לנסות שוב" כדי לחזור למשחק.',
+    'join.error.started': 'המשחק הזה כבר התחיל. רק מי ששיחק בו יכול לחזור, עם אותו שם.',
+    'join.error.codeLetters':
+      'קוד החדר כתוב באותיות באנגלית, למשל ABCD — החליפו את המקלדת לאנגלית.',
+    'join.error.codeLength': 'בקוד החדר יש 4 אותיות — בדקו במסך הגדול!',
+    'room.offline': 'החדר מנותק — מתחברים מחדש… טלפונים לא יכולים להצטרף כרגע.',
+    'room.leaveConfirm': 'לצאת מהמשחק? כל הטלפונים ינותקו. אפשר להמשיך אותו אחר כך.',
+    'room.leave': 'לצאת',
 
     'setup.voting': 'הצבעה על מילים',
     'setup.voting.devices': 'הצבעה בטלפונים',

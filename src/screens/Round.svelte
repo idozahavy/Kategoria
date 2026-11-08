@@ -44,10 +44,55 @@
     if (!isRemote && players.length > 1 && first !== null && needsHandoff(first)) openHandoff();
     const room = isRemote ? getActiveRoom() : null;
     if (!room) return;
-    return room.onGuestMessage((playerId, msg) => {
+    const unsubscribe = room.onGuestMessage((playerId, msg) => {
       handleGuestAnswers(playerId, msg);
     });
+    connectedIds = room.connectedIds();
+    const poll = setInterval(() => {
+      connectedIds = room.connectedIds();
+      finishIfOnlyAbsentLeft();
+    }, ROOM_POLL_MS);
+    return () => {
+      unsubscribe();
+      clearInterval(poll);
+    };
   });
+
+  /** How often the shared screen re-checks which phones are still connected. */
+  const ROOM_POLL_MS = 1000;
+  /** Players whose phone is connected right now (remote rounds). */
+  let connectedIds = $state<string[]>([]);
+
+  /**
+   * Everyone whose phone is still connected has sent their words: a phone that
+   * went away (locked, out of battery, closed) no longer holds up the round.
+   */
+  function finishIfOnlyAbsentLeft(): void {
+    const r = round;
+    if (!r || r.phase !== 'entry') return;
+    const submitted = new Set(r.submittedIds ?? []);
+    if (submitted.size === 0) return;
+    if (players.every((p) => submitted.has(p.id) || !connectedIds.includes(p.id))) forceReview();
+  }
+
+  /** How long a remote round waits for the phones' last words once it is ending. */
+  const STOP_GRACE_MS = 3000;
+  let isStopping = $state(false);
+
+  /**
+   * End a remote round without losing words: every phone sends what it typed
+   * so far, and the review starts once those are in (or after the grace).
+   */
+  function stopRemoteRound(): void {
+    if (isStopping) return;
+    isStopping = true;
+    const idx = roundIndex;
+    getActiveRoom()?.broadcast({ type: 'stop', roundIndex: idx });
+    setTimeout(() => {
+      isStopping = false;
+      if (roundIndex === idx && roundPhase === 'entry') forceReview();
+    }, STOP_GRACE_MS);
+  }
 
   const round = $derived($game ? $game.rounds[$game.currentRound] : null);
   const players = $derived($game?.players ?? []);
@@ -392,6 +437,8 @@
     const idx = roundIndex;
     showTimeUp = true;
     vibrate(TIME_UP_BUZZ);
+    // A phone whose clock runs behind sends its words now, not after the grace.
+    if (isRemote) getActiveRoom()?.broadcast({ type: 'stop', roundIndex: idx });
     // Remote: 3s grace so every guest's buzzer-beater auto-send can land
     // (each phone's countdown starts slightly after the host's). The window
     // ends early when the last guest submits — handleGuestAnswers moves the
@@ -544,13 +591,17 @@
         <p class="waiting-title">{$t('round.waitingFor')}</p>
         <div class="waiting-chips">
           {#each players as p (p.id)}
-            <span class="wait-chip" class:done={submittedSet.has(p.id)}>
-              {submittedSet.has(p.id) ? '✔ ' : ''}{p.name}
+            {@const isDone = submittedSet.has(p.id)}
+            {@const isAway = !isDone && !connectedIds.includes(p.id)}
+            <span class="wait-chip" class:done={isDone} class:away={isAway}>
+              {isDone ? '✔ ' : isAway ? '📴 ' : ''}{p.name}
             </span>
           {/each}
         </div>
       </div>
-      <Button variant="secondary" block onclick={forceReview}>{$t('round.finishNow')}</Button>
+      <Button variant="secondary" block disabled={isStopping} onclick={stopRemoteRound}
+        >{$t('round.finishNow')}</Button
+      >
     {:else}
       <div class="cards">
         {#each round.categoryIds as catId, i (catId)}
@@ -823,6 +874,13 @@
     background: var(--color-success);
     color: var(--color-on-success);
     border-color: var(--color-success);
+  }
+  /* The phone went away: it no longer holds the round up. See-through with a
+     dashed edge, so it reads as "not here" next to the plain and done chips. */
+  .wait-chip.away {
+    background: transparent;
+    border-color: var(--color-border-strong);
+    border-style: dashed;
   }
   .cat-header {
     display: flex;

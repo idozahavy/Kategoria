@@ -11,5 +11,6 @@ test-gaps-report.html
 # perf-audit profiler output (bench/ scripts are committed)
 prof/
 
-# tools/capture.mjs output (regenerated on demand)
+# tools/capture.mjs and tools/room-faults.mjs output (regenerated on demand)
 qa/captures/
+qa/room-faults/

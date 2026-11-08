@@ -93,6 +93,9 @@
   }
   .modal {
     background: var(--color-surface);
+    /* The dark scrim is the page colour, so the panel needs its own edge. */
+    border: var(--border-width) solid var(--color-border-strong);
+    box-shadow: var(--shadow-card);
     border-radius: var(--radius-lg);
     padding: var(--space-5);
     max-inline-size: 360px;

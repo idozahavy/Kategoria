@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createRoom, type GuestInfo, type HostRoom, reopenRoom, STALE_AFTER_MS } from './p2p';
-import { FakeConn, FakePeer, flush, sentTypes, stubNoTurnEndpoint } from './p2p.test-helpers';
+import {
+  FakeConn,
+  FakePeer,
+  flush,
+  sentTypes,
+  stubNoTurnEndpoint,
+  stubStorage,
+} from './p2p.test-helpers';
 
 vi.mock('peerjs', async () => {
   const { FakePeer: Peer } = await import('./p2p.test-helpers');
@@ -292,15 +299,21 @@ describe('reopenRoom', () => {
   ];
 
   async function reopen(code = 'ABCD'): Promise<{ room: HostRoom; peer: FakePeer }> {
-    const pending = reopenRoom(code, players);
-    await flush();
+    const room = await reopenRoom(code, players);
     const peer = FakePeer.last();
     peer.emit('open');
-    return { room: await pending, peer };
+    await flush();
+    return { room, peer };
   }
 
   it('reopens under the normalized code with a locked, empty seat per known player', async () => {
-    const { room, peer } = await reopen(' ab cd ');
+    const room = await reopenRoom(' ab cd ', players);
+    // Resolves before the broker answers: the game is back on screen at once.
+    expect(room.status()).toBe('offline');
+    const peer = FakePeer.last();
+    peer.emit('open');
+    await flush();
+    expect(room.status()).toBe('online');
     expect(room.code).toBe('ABCD');
     expect(peer.id).toBe('kidcategories-v1-ABCD');
     expect(room.guests()).toEqual(players);
@@ -318,35 +331,63 @@ describe('reopenRoom', () => {
     expect(room.guests().map((g) => g.name)).toEqual(['Ida', 'Ido']);
   });
 
-  it('retries after two seconds while the broker still holds the old peer', async () => {
-    const pending = reopenRoom('ABCD', players);
+  it('keeps trying while the broker still holds the old page (it can take ~100 s)', async () => {
+    const room = await reopenRoom('ABCD', players);
+    // More attempts than the old fixed three, each after a longer pause.
+    for (const pause of [1000, 2000, 4000, 5000, 5000, 5000]) {
+      const before = FakePeer.instances.length;
+      FakePeer.last().emit('error', { type: 'unavailable-id' });
+      await flush();
+      expect(FakePeer.last().destroyed).toBe(true);
+      vi.advanceTimersByTime(pause - 1);
+      expect(FakePeer.instances).toHaveLength(before);
+      vi.advanceTimersByTime(1);
+      expect(FakePeer.instances).toHaveLength(before + 1);
+    }
+    expect(room.status()).toBe('offline');
+    FakePeer.last().emit('open');
     await flush();
+    expect(room.status()).toBe('online');
+  });
+
+  it('tries a fresh peer when the broker never answers within 12 s', async () => {
+    await reopenRoom('ABCD', players);
+    const first = FakePeer.last();
+    vi.advanceTimersByTime(11_999);
+    expect(first.destroyed).toBe(false);
+    vi.advanceTimersByTime(1);
+    await flush();
+    expect(first.destroyed).toBe(true);
+    vi.advanceTimersByTime(1000);
+    expect(FakePeer.instances).toHaveLength(2);
+  });
+
+  it("asks for the id with this browser's own token, so the broker hands it straight back", async () => {
+    stubStorage();
+    const { room, peer } = await openRoom();
+    const { token } = peer.options as { token: string };
+    expect(token).not.toBe('');
+    room.close();
+
+    await reopenRoom(room.code, players);
+    expect(FakePeer.last().options).toMatchObject({ token });
+    await reopenRoom(room.code === 'ABCD' ? 'BCDE' : 'ABCD', players);
+    expect(FakePeer.last().options).not.toMatchObject({ token });
+  });
+
+  it('a closed room stops trying, and frees a peer the broker accepts too late', async () => {
+    const room = await reopenRoom('ABCD', players);
     FakePeer.last().emit('error', { type: 'unavailable-id' });
     await flush();
+    room.close();
+    vi.advanceTimersByTime(60_000);
     expect(FakePeer.instances).toHaveLength(1);
-    vi.advanceTimersByTime(2000);
-    await flush();
-    expect(FakePeer.instances).toHaveLength(2);
-    FakePeer.last().emit('open');
-    await expect(pending).resolves.toMatchObject({ code: 'ABCD' });
-  });
 
-  it('rejects with a network error on other broker errors', async () => {
-    const pending = reopenRoom('ABCD', players);
-    await flush();
-    FakePeer.last().emit('error', { type: 'network' });
-    await expect(pending).rejects.toThrow('network');
-    expect(FakePeer.last().destroyed).toBe(true);
-  });
-
-  it('rejects with a network error when the broker never answers within 12 s', async () => {
-    const pending = reopenRoom('ABCD', players);
-    await flush();
+    const late = await reopenRoom('ABCD', players);
+    late.close();
     const peer = FakePeer.last();
-    vi.advanceTimersByTime(11_999);
-    expect(peer.destroyed).toBe(false);
-    vi.advanceTimersByTime(1);
-    await expect(pending).rejects.toThrow('network');
+    peer.emit('open');
+    await flush();
     expect(peer.destroyed).toBe(true);
   });
 });

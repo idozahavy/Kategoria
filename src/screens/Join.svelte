@@ -4,6 +4,7 @@
   import { AVATAR_EMOJI, fileToAvatar } from '../lib/avatar';
   import { invalidReason, matchesLetter } from '../lib/game';
   import {
+    forgetGuestDraft,
     forgetGuestSeat,
     readGuestDraft,
     readGuestSeat,
@@ -18,6 +19,8 @@
     MAX_ANSWER_LENGTH,
     normalizeRoomCode,
     PING_INTERVAL_MS,
+    type RoomCodeProblem,
+    roomCodeProblem,
   } from '../lib/p2p';
   import { hasCamera, roomCodeFromScan, startQrScan } from '../lib/qrscan';
   import { resultsText, shareText } from '../lib/share';
@@ -39,6 +42,7 @@
   import TopBar from '../lib/ui/TopBar.svelte';
   import WinnerHero from '../lib/ui/WinnerHero.svelte';
   import type { VoteChoice } from '../lib/vote';
+  import { keepScreenOn } from '../lib/wakelock';
 
   type GuestPhase =
     | 'form'
@@ -156,7 +160,27 @@
     session?.onClose(null);
     session?.close();
     session = null;
+    keepScreenOn('guest', false);
   });
+
+  // In a room, the phone stays awake: one that sleeps misses the round.
+  $effect(() => {
+    keepScreenOn('guest', phase !== 'form' && phase !== 'error' && phase !== 'scores');
+  });
+
+  /** What the code field says about a code that can't be a room code. */
+  const CODE_PROBLEM_KEYS: Record<RoomCodeProblem, string> = {
+    empty: 'join.error.emptyCode',
+    letters: 'join.error.codeLetters',
+    length: 'join.error.codeLength',
+  };
+
+  /** The message for a join the room refused or never answered. */
+  function joinErrorKey(e: unknown): string {
+    if (e instanceof Error && e.message === 'not-found') return 'join.error.notFound';
+    if (e instanceof Error && e.message === 'started') return 'join.error.started';
+    return 'join.error.network';
+  }
 
   /** The answers payload last sent, so a reconnect can resend it. */
   let sentAnswers: Record<string, string> | null = null;
@@ -196,12 +220,17 @@
       vote = msg;
       if (msg.ownerIds.includes(playerId)) phase = 'vote-own';
       else phase = votedIds.has(msg.voteId) ? 'voted' : 'vote';
+    } else if (msg.type === 'stop') {
+      // The round is ending: whatever is typed counts, like when the clock runs out.
+      if (phase === 'entry' && round?.roundIndex === msg.roundIndex) submitAnswers();
     } else if (msg.type === 'results') {
+      forgetGuestDraft();
       results = msg;
       const mine = msg.categories.flatMap((c) => c.answers).find((a) => a.playerId === playerId);
       if (mine) myName = mine.name;
       phase = 'results';
     } else if (msg.type === 'scores') {
+      forgetGuestDraft();
       // A replay after a reconnect doesn't celebrate twice.
       if (phase !== 'scores' && msg.rows.some((r) => r.isWinner)) {
         playFanfare();
@@ -284,7 +313,8 @@
   }
 
   async function join(): Promise<void> {
-    codeError = normalizeRoomCode(code) === '' ? $t('join.error.emptyCode') : '';
+    const problem = roomCodeProblem(code);
+    codeError = problem === null ? '' : $t(CODE_PROBLEM_KEYS[problem]);
     nameError = name.trim() === '' ? $t('join.error.emptyName') : '';
     if (codeError !== '' || nameError !== '') return;
     phase = 'connecting';
@@ -292,10 +322,7 @@
       wireSession(await joinRoom(code, name.trim(), avatar));
       phase = 'lobby';
     } catch (e) {
-      errorKey =
-        e instanceof Error && e.message === 'not-found'
-          ? 'join.error.notFound'
-          : 'join.error.network';
+      errorKey = joinErrorKey(e);
       phase = 'error';
     }
   }
@@ -313,9 +340,9 @@
       phase = 'lobby'; // until the host's replay says where the game is
     } catch (e) {
       if (phase !== 'connecting') return; // the player left meanwhile
-      if (e instanceof Error && e.message === 'not-found') {
+      if (e instanceof Error && (e.message === 'not-found' || e.message === 'started')) {
         forgetSession();
-        codeError = $t('join.error.notFound');
+        codeError = $t(joinErrorKey(e));
         phase = 'form';
         return;
       }
@@ -516,6 +543,8 @@
         label={$t('join.codeLabel')}
         bind:value={code}
         placeholder="ABCD"
+        autocapitalize="characters"
+        spellcheck={false}
         error={codeError}
         oninput={() => (codeError = '')}
       />
@@ -862,7 +891,8 @@
     background: var(--color-surface);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-pill);
-    padding: var(--space-1);
+    /* No padding: a padded badge reaches the avatar's centred letter. */
+    padding: 0;
   }
   .avatar-title {
     font-size: var(--font-size-h2);

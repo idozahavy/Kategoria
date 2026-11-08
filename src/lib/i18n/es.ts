@@ -208,6 +208,14 @@ export const es: LanguagePack = {
     'join.error.network': 'No se pudo conectar — revisa tu internet e inténtalo otra vez.',
     'join.error.hostLeft': 'La partida ha terminado.',
     'join.error.disconnected': '¡Se perdió la conexión! Toca "Intentar otra vez" para volver.',
+    'join.error.started':
+      'Esa partida ya empezó. Solo sus jugadores pueden volver, con el mismo nombre.',
+    'join.error.codeLetters': 'Los códigos de sala solo usan letras de la A a la Z, como ABCD.',
+    'join.error.codeLength': 'Los códigos de sala tienen 4 letras: ¡mira la pantalla grande!',
+    'room.offline': 'Sala sin conexión — reconectando… Los móviles no pueden unirse ahora.',
+    'room.leaveConfirm':
+      '¿Salir de la partida? Todos los móviles se desconectarán. Puedes continuarla más tarde.',
+    'room.leave': 'Salir',
 
     'setup.voting': 'Votar palabras',
     'setup.voting.devices': 'Votar en los móviles',

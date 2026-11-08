@@ -20,7 +20,8 @@
     // Arriving home always ends any hosted room (e.g. via the browser back trap).
     setActiveRoom(null);
     try {
-      hasSaves = (await listSaves()).some((s) => s.status !== 'finished' && !s.isRemote);
+      // Hosted games too: Resume reopens their room so the phones can rejoin.
+      hasSaves = (await listSaves()).some((s) => s.status !== 'finished');
     } catch {
       hasSaves = false;
     }
