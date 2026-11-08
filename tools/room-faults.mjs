@@ -724,9 +724,16 @@ async function ensureServer() {
 
 const server = await ensureServer();
 const isBuild = /\/assets\/index-[\w-]+\.js/.test(await (await fetch(BASE)).text());
+// The function only mints for the game's own pages; Node's fetch sends no
+// Sec-Fetch-Site, so say it like the page's request does or the probe gets 403.
 const hasTurn =
-  (await fetch(new URL('turn-credentials', BASE), { method: 'POST' }).catch(() => null))?.ok ===
-  true;
+  (
+    await fetch(new URL('turn-credentials', BASE), {
+      method: 'POST',
+      headers: { 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
+      body: '{}',
+    }).catch(() => null)
+  )?.ok === true;
 
 const requested = args.only === '' ? Object.keys(SCENARIOS) : args.only.split(',');
 const queue = [];
